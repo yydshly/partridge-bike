@@ -3,7 +3,7 @@ $p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = 
 if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
 . (Join-Path $p '_paths.ps1')
 $dir = $ROOT
-$app   = [IO.File]::ReadAllText(($APP))
+$appText = [IO.File]::ReadAllText(($APP))
 $built = [IO.File]::ReadAllText(($PRODUCT))
 
 # ---- 1. base64 integrity: decode every blob back out of the built HTML and
@@ -66,5 +66,5 @@ $expJs = '[' + ($exp -join ',') + ']'
 
 $tpl     = [IO.File]::ReadAllText(($TPL_BGM2))
 $harness = $tpl.Replace('/*__BGM__*/', $block).Replace('__EXPECT__', $expJs)
-[IO.File]::WriteAllText((Join-Path $dir '_bgmharness2.html'), $harness, (New-Object Text.UTF8Encoding($false)))
-"harness bytes: {0:N0}" -f (Get-Item (Join-Path $dir '_bgmharness2.html')).Length
+[IO.File]::WriteAllText((Join-Path $DIR_OUT '_bgmharness2.html'), $harness, (New-Object Text.UTF8Encoding($false)))
+"harness bytes: {0:N0}" -f (Get-Item (Join-Path $DIR_OUT '_bgmharness2.html')).Length

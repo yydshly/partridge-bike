@@ -24,10 +24,12 @@ $stage = Join-Path $env:TEMP ('pkb-ghp-' + $Repo.Replace('/','-'))
 Write-Output '=== 1/5 构建 ==='
 & powershell -NoProfile -ExecutionPolicy Bypass -File $S_BUILD
 if ($LASTEXITCODE -ne 0) { throw "构建失败（退出码 $LASTEXITCODE）" }
-# 产物路径从 _paths.ps1 拿，不再自己拼 $Dir —— $Dir 只是发布脚本的入口参数，
-# 拿它当根目录就等于路径又有了第二个出处。
-$product = $PRODUCT
-$size = (Get-Item $product).Length
+# 产物路径直接用 $PRODUCT（来自 _paths.ps1），不再自己拼 $Dir ——
+# $Dir 只是发布脚本的入口参数，拿它当根目录就等于路径又有了第二个出处。
+# ⚠️ 这里原来写的是 $product = $PRODUCT：$product 和 $PRODUCT 在 PowerShell 里
+#    是**同一个变量**（大小写不敏感），那行是个没用的自我别名，
+#    而它是个陷阱：以后谁写 $product = <别的东西>，$PRODUCT 就被改掉了。
+$size = (Get-Item $PRODUCT).Length
 Write-Output ("    产物 {0:N0} bytes" -f $size)
 if ($size -lt 5MB) { throw "产物只有 $size 字节，八成没构建对，先别推" }
 
@@ -36,7 +38,7 @@ Write-Output '=== 2/5 准备暂存目录 ==='
 # 万一路径变量写错，那是可恢复的删除而不是永久丢失。
 if (Test-Path $stage) { mavis-trash $stage }
 $null = New-Item -ItemType Directory -Path $stage -Force
-Copy-Item $product (Join-Path $stage 'index.html') -Force
+Copy-Item $PRODUCT (Join-Path $stage 'index.html') -Force
 
 # ⚠️ 必须**不带 BOM**。PowerShell 5.1 的 `Set-Content -Encoding UTF8` 会写 BOM，
 #    而 git 不一定认得出来，写进去的规则可能悄悄失效。

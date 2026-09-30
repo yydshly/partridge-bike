@@ -95,6 +95,24 @@ try {
 }
 
 Write-Output ''
+Write-Output '=== 4) 注入一处变量名碰撞：必须 exit 1 且点名那个变量 ==='
+# 这条对应的是**真的发生过**的事故：2026-10-01 的路径收口把
+# `$app = ReadAllText((Join-Path $dir '_app3d.html'))` 改成了
+# `$app = ReadAllText($APP)` —— 而 PowerShell 变量名大小写不敏感，
+# `$app` 就是 `$APP`，于是这行把**路径变量**改成了源文件正文，
+# 之后每一行再拿 $APP 当路径用都炸。
+# 注入时用**小写** `$app` 而不是 `$APP` —— 「只差大小写」才是这个坑的形态；
+# 注入一个完全不同的名字，判据抓到了也证明不了它认得大小写不敏感这件事。
+# 片段在运行时拼出来，免得本文件自己被扫成一处碰撞
+# （本文件的那一行以 Inject 开头，判据的 `^\s*\$\w+\s*=` 匹配不到它）。
+Inject ('$a' + 'pp = 1')
+try {
+  Expect 'gen\_mkpathtest.ps1 里给路径变量名赋值' 1 'PowerShell 大小写不敏感'
+} finally {
+  mavis-trash $victim
+}
+
+Write-Output ''
 if (Test-Path $victim) { mavis-trash $victim }
 if ($fail -eq 0) {
   Write-Output 'pathcheck 反查成立：好源码放行，注入的硬编码和数据来源路径都拦得住（不是恒过）'

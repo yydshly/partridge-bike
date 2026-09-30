@@ -26,23 +26,23 @@ function Step($name, $block){
 #    再拼一次，路径就又有了第二个出处 —— 那正是 A 阶段要消掉的东西。
 $ps = { param($f, $Path) if ($Path) { powershell -NoProfile -ExecutionPolicy Bypass -File $f -Path $Path } else { powershell -NoProfile -ExecutionPolicy Bypass -File $f } }
 
-Step '1/17 构建'            { & $ps $S_BUILD }
-Step '2/17 源码语法（注释/字符串配平）' { & $ps $S_SYNTAX -Path $APP }
-Step '3/17 成品语法（注释/字符串配平）' { & $ps $S_SYNTAX -Path $PRODUCT }
+Step '1/18 构建'            { & $ps $S_BUILD }
+Step '2/18 源码语法（注释/字符串配平）' { & $ps $S_SYNTAX -Path $APP }
+Step '3/18 成品语法（注释/字符串配平）' { & $ps $S_SYNTAX -Path $PRODUCT }
 # ⚠️ 这两步不是「保险」，是 2026-09-30 真抓到一个把整个 app 打死的东西：
 #    frame() 里 `S.tSec += dt` 的 dt 全文件没声明过，每帧抛 ReferenceError、
 #    画面全黑，而当时语法检查、作用域体检、六套 harness、交付自检**全绿**。
-Step '4/17 源码自由变量（作用域链）'  { & $ps $S_FREEVAR -Path $APP }
-Step '5/17 成品自由变量（作用域链）'  { & $ps $S_FREEVAR -Path $PRODUCT }
-Step '6/17 面板初始状态（生成注入探针）' { & $ps $S_MKUISTATE }
-Step '7/17 驾驶回归（生成）'  { & $ps $S_MKDRIVE }
-Step '8/17 车流+碰撞（生成）' { & $ps $S_MKTRAFFIC }
-Step '9/17 路段结构（生成）'   { & $ps $S_MKROUTE }
-Step '10/17 时段×天气（生成）'  { & $ps $S_MKMOOD }
-Step '11/17 自动巡航（生成）'   { & $ps $S_MKCRUISE }
-Step '12/17 鹧鸪状态机（生成）' { & $ps $S_MKMOODSTATE }
-Step '13/17 作用域体检'       { & $ps $S_SCOPE }
-Step '14/17 交付自检' {
+Step '4/18 源码自由变量（作用域链）'  { & $ps $S_FREEVAR -Path $APP }
+Step '5/18 成品自由变量（作用域链）'  { & $ps $S_FREEVAR -Path $PRODUCT }
+Step '6/18 面板初始状态（生成注入探针）' { & $ps $S_MKUISTATE }
+Step '7/18 驾驶回归（生成）'  { & $ps $S_MKDRIVE }
+Step '8/18 车流+碰撞（生成）' { & $ps $S_MKTRAFFIC }
+Step '9/18 路段结构（生成）'   { & $ps $S_MKROUTE }
+Step '10/18 时段×天气（生成）'  { & $ps $S_MKMOOD }
+Step '11/18 自动巡航（生成）'   { & $ps $S_MKCRUISE }
+Step '12/18 鹧鸪状态机（生成）' { & $ps $S_MKMOODSTATE }
+Step '13/18 作用域体检'       { & $ps $S_SCOPE }
+Step '14/18 交付自检' {
   $t = [IO.File]::ReadAllText(($PRODUCT))
   $src = Get-Item ($APP)
   $out = Get-Item ($PRODUCT)
@@ -121,8 +121,8 @@ Step '14/17 交付自检' {
   Write-Output ("  源 {0:N0} / 成品 {1:N0} bytes" -f $src.Length, $out.Length)
   $script:fail += $bad
 }
-Step '15/17 作用域检查器自检（喂它一份已知坏样本）' { & $ps $S_SCOPETEST }
-Step '16/17 语法/自由变量/悬空调用/路径 检查器自检' {
+Step '15/18 作用域检查器自检（喂它一份已知坏样本）' { & $ps $S_SCOPETEST }
+Step '16/18 语法/自由变量/悬空调用/路径 检查器自检' {
   & $ps $S_SYNTEST
   & $ps $S_FREEVARTEST
   & $ps $S_LINTTEST
@@ -141,7 +141,20 @@ Step '16/17 语法/自由变量/悬空调用/路径 检查器自检' {
 #         静态判据 ① 看不见这种，可它照样会在文件一搬走时断掉；
 #      ③ 已跟踪的源文件有没有被 .gitignore 悄悄踢出版本库 ——
 #         光看 git status 看不出来，被忽略的文件根本没进索引。
-Step '17/17 路径收口（不变量常驻）' { & $ps $S_PATHCHECK }
+Step '17/18 路径收口（不变量常驻）' { & $ps $S_PATHCHECK }
+
+# ⚠️ gen\_mkharness.ps1 **以前从来没被 _checkall 跑过**，而它验的恰恰是
+#    用户唯一能直接听出来的东西：8 首 mp3 的 base64 和盘上文件**逐字节**一致。
+#    也就是说「_build.ps1 烤错了音频」这件事，以前**没有任何自动检查会抓到** ——
+#    第 14 步那条「8 首音轨内嵌」只数 `b64:'` 出现几次，8 就 PASS。
+#
+#    它之所以能烂这么久还不被发现：2026-10-01 的路径收口把
+#    `$app = ReadAllText((Join-Path $dir '_app3d.html'))` 改成了
+#    `$app = ReadAllText($APP)` —— PowerShell 变量名大小写不敏感，
+#    于是这行把**路径变量 `$APP`** 改成了源文件正文，脚本从第 36 行起全崩。
+#    而没人跑它，所以没人知道。已改名 + 已挂进这一步。
+#    规律：**没被任何编排器调用的脚本，等于没有检查**，无论它写得多认真。
+Step '18/18 音频完整性（base64 逐字节对盘 + 歌词数）' { & $ps $S_MKHARNESS }
 
 Write-Output ''
 # 页面清点放在最前面：缺页 / 一条断言都没有，本身就该算失败。

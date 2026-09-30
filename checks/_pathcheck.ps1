@@ -74,6 +74,55 @@ foreach ($f in $scripts) {
   }
 }
 
+# ── ②bis 变量名碰撞：PowerShell 变量名**大小写不敏感** ─────────
+# 为什么这是独立的一类，不是 ① 的附属：
+#   `$app = [IO.File]::ReadAllText($APP)` 这一行，**不是**「用一个局部变量
+#   装源文件内容」—— `$app` 和 `$APP` 是**同一个变量**，所以这行的真实效果是
+#   「把路径变量 `$APP` 改成源文件的正文」。
+#   之后任何一行再拿 `$APP` 当路径用就炸：
+#     ReadAllLines(<252 KB 的 HTML>) → "Illegal characters in path"
+#
+# 这个坑是 2026-10-01 的路径收口**自己造出来的**：收口前那行是
+#   `$app = ReadAllText((Join-Path $dir '_app3d.html'))`
+# `$dir` 和 `$app` 是两个变量，一切正常；收口后 `$APP` 被引进来，撞了。
+# 而 gen\_mkharness.ps1 **从来没被 _checkall 跑过**，所以它一路静默腐烂，
+# 没有任何东西会发现 —— 直到有人手工跑它。
+#
+# 判据：任何脚本都不得给 _paths.ps1 提供的名字赋值（**含仅大小写不同**）。
+$shadow = @()
+$pathVarNames = @('ROOT', 'APP', 'PRODUCT', 'BGM_META', 'THREE_LIB', 'README', 'AGENTS',
+                  'SCREENSHOT', 'GITIGNORE', 'GITATTRS')
+foreach ($line in [IO.File]::ReadAllLines((Join-Path $ROOT '_paths.ps1'))) {
+  if ($line -match '^\$(S_\w+|TPL_\w+|OUT_\w+|DIR_\w+)\s*=') { $pathVarNames += $Matches[1] }
+}
+$pathVarNames = @($pathVarNames | Sort-Object -Unique)
+foreach ($f in $scripts) {
+  $rel = $f.FullName.Substring($ROOT.Length + 1)
+  # _paths.ps1 本身就是这些变量的**定义处**，它当然要赋值。
+  # _checkall.ps1 / _refactor.ps1 里是迁移工具的探针文本，不参与运行时。
+  # ⚠️ 这两个排除项**必须运行时算出来**，不能写字面量 ——
+  #    判据 ① 匹配的是「引号里的已知文件名」，而 `checks\_checkall.ps1`
+  #    正是已知文件名。写死排除名单 = 自己把自己报成一处硬编码。
+  #    一份能测出别人问题的检查，自己不能犯规 —— 判据扫的是**全部**脚本。
+  if ($rel -eq ('_paths.ps1')) { continue }
+  if ($rel -eq ($DIR_CHECKS.Substring($ROOT.Length + 1) + '\' + (Split-Path $S_CHECKALL -Leaf))) { continue }
+  if ($rel -eq ($DIR_TOOLS.Substring($ROOT.Length + 1) + '\' + (Split-Path $S_REFRACTOR -Leaf))) { continue }
+  $lines = [IO.File]::ReadAllLines($f.FullName)
+  for ($i = 0; $i -lt $lines.Count; $i++) {
+    $line = $lines[$i]
+    if ($line -match '^\s*#') { continue }
+    if ($line -notmatch '^\s*\$(?<lv>\w+)\s*=') { continue }
+    $local = $Matches['lv']
+    foreach ($pv in $pathVarNames) {
+      if ($local -ieq $pv) {
+        $kind = if ($local -ceq $pv) { '同名' } else { '仅大小写不同' }
+        $shadow += ("$rel`:$($i + 1)  本地 $local 与 $pathVar[$kind]")
+        break
+      }
+    }
+  }
+}
+
 $bad = 0
 if ($stragglers.Count -gt 0) {
   $bad++
@@ -84,6 +133,11 @@ if ($joins.Count -gt 0) {
   $bad++
   Write-Output ("  ! {0} 处 'Join-Path <根目录别名> <非字面量>' —— 基准是仓库根，那个文件一搬走就断:" -f $joins.Count)
   $joins | ForEach-Object { Write-Output ("      " + $_) }
+}
+if ($shadow.Count -gt 0) {
+  $bad++
+  Write-Output ("  ! {0} 处给 _paths.ps1 的变量名赋值 —— PowerShell 大小写不敏感，`$app = ...` 就是 `$APP = ...`:" -f $shadow.Count)
+  $shadow | ForEach-Object { Write-Output ("      " + $_) }
 }
 
 # ── ③ 源有没有被 .gitignore 悄悄踢出版本库 ──────────────────

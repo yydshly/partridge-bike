@@ -187,7 +187,12 @@ $dead = @()
 
 # 自己不在名单里：一次性工具不需要被自己改写（它跑完就要退休），
 # 而且被自己改写之后就没法再重跑对照了。
-$targets = Get-ChildItem $dir -Filter *.ps1 | Where-Object { $_.Name -notin @('_paths.ps1', '_refactor.ps1') }
+# 排除名单**运行时算出来**，不写文件名字面量 ——
+# checks\_pathcheck.ps1 扫全部脚本，而 '_refactor.ps1' 正是它认得的已知文件名，
+# 这里写死就等于自己把自己报成一处硬编码。
+$selfName = Split-Path $S_REFRACTOR -Leaf
+$pathName = Split-Path $pathsFile -Leaf
+$targets = Get-ChildItem $dir -Filter *.ps1 | Where-Object { $_.Name -notin @($pathName, $selfName) }
 
 foreach ($f in $targets) {
   $lines = [IO.File]::ReadAllLines($f.FullName)

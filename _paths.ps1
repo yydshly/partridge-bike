@@ -67,6 +67,10 @@ $S_BUILD     = "$DIR_TOOLS\_build.ps1"
 $S_DEPLOY    = "$DIR_TOOLS\_deploy.ps1"
 $S_SERVE     = "$DIR_TOOLS\_serve.ps1"
 $S_SWAP      = "$DIR_TOOLS\_swap.ps1"
+# 一次性迁移工具。跑完这次收口它就该退休（常驻判据是 checks\_pathcheck.ps1，
+# 不是它），但它还留在仓库里当**事故记录** —— 里面四个坑的注释比任何
+# 文档都具体。所以给它一个出处，而不是让检查器靠字面量去排除它。
+$S_REFRACTOR = "$DIR_TOOLS\_refactor.ps1"
 
 # ── checks/：判「代码对不对」的那些 ──────────────────────────
 $S_CHECKALL  = "$DIR_CHECKS\_checkall.ps1"
@@ -162,7 +166,7 @@ if ($outProbeGone.Count -gt 0) {
 #  出现在上面的赋值里（_pathcheck.ps1 会反过来验这两份对不对得上）。
 $mustExist = @(
   $APP, $BGM_META, $THREE_LIB, $README, $AGENTS, $SCREENSHOT, $GITIGNORE, $GITATTRS,
-  $S_BUILD, $S_DEPLOY, $S_SERVE, $S_SWAP,
+  $S_BUILD, $S_DEPLOY, $S_SERVE, $S_SWAP, $S_REFRACTOR,
   $S_CHECKALL, $S_SYNTAX, $S_FREEVAR, $S_SCOPE, $S_LINT, $S_PAGES, $S_PATHCHECK,
   $S_SCOPETEST, $S_SYNTEST, $S_FREEVARTEST, $S_LINTTEST, $S_PAGESTEST, $S_DRIVEWIRES, $S_PATHTEST,
   $S_MKDRIVE, $S_MKTRAFFIC, $S_MKROUTE, $S_MKMOOD, $S_MKCRUISE, $S_MKMOODSTATE,

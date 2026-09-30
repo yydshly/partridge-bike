@@ -3,12 +3,14 @@ $port = 8931
 $p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
 if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
 . (Join-Path $p '_paths.ps1')
-$root = $ROOT
+# ⚠️ 原来叫 $root = $ROOT —— 大小写不敏感，那是**同一个变量**，
+#    等于给自己赋了个别名，而别名是陷阱：以后谁写 $root = <别的东西>，$ROOT 就被改掉了。
+$docRoot = $ROOT
 
 $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://localhost:$port/")
 $listener.Start()
-Write-Output "serving $root on http://localhost:$port/"
+Write-Output "serving $docRoot on http://localhost:$port/"
 
 while ($listener.IsListening) {
     try {
@@ -19,7 +21,7 @@ while ($listener.IsListening) {
         # 于是「本地预览」打开的其实是旧版，**而且它照样正常打开、照样有画面**，
         # 看起来完全没问题。2026-10-01 连同那个文件一起删掉了。
         if (-not $path) { $path = $PRODUCT.Substring($ROOT.Length + 1) }
-        $file = Join-Path $root $path
+        $file = Join-Path $docRoot $path
         $isHead = ($ctx.Request.HttpMethod -eq 'HEAD')
 
         if (Test-Path -LiteralPath $file -PathType Leaf) {

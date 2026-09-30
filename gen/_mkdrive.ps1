@@ -80,12 +80,12 @@ if ($wbad -gt 0) { throw "drive 接线检查失败 $wbad 条" }
 
 # 产品里那段驾驶逻辑必须**真的**在 if (S.running) 里面 ——
 # 「暂停时什么都不动」全靠它，而 harness 里的 run() 只是在模仿这个结构。
-$app = [IO.File]::ReadAllText(($APP))
-$kmAt = $app.IndexOf('S.km += v*dt/1000;')
-$guardAt = if ($kmAt -ge 0) { $app.LastIndexOf('if (S.running){', $kmAt) } else { -1 }
+$appText = [IO.File]::ReadAllText(($APP))
+$kmAt = $appText.IndexOf('S.km += v*dt/1000;')
+$guardAt = if ($kmAt -ge 0) { $appText.LastIndexOf('if (S.running){', $kmAt) } else { -1 }
 $insideRun = $false
 if ($kmAt -ge 0 -and $guardAt -ge 0) {
-  $mid = $app.Substring($guardAt, $kmAt - $guardAt)
+  $mid = $appText.Substring($guardAt, $kmAt - $guardAt)
   $mid = [regex]::Replace($mid, '(?s)/\*.*?\*/', '')
   $mid = [regex]::Replace($mid, '(?m)//.*$', '')
   $op = ([regex]::Matches($mid,'\{')).Count
