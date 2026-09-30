@@ -2,7 +2,10 @@
 # 一条命令跑完全部验证。
 # 顺序有讲究：先重建（后面的 harness 从 _app3d.html 切代码，源改了就得重新生成），
 # 再跑三套回归，最后交付自检。作用域检查夹在中间，因为它只读源、不依赖 harness。
-$dir = 'E:\minimax_code_project\0929_project\partridge-bike'
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$dir = $ROOT
 Set-Location $dir
 $fail = 0
 function Step($name, $block){
@@ -11,32 +14,34 @@ function Step($name, $block){
   & $block
   if ($LASTEXITCODE -ne 0) { $script:fail++; Write-Output ("  >>> {0} 退出码 {1}" -f $name, $LASTEXITCODE) }
 }
-# ⚠️ 第二个参数**必须叫 $Path**：调用处写的是 `& $ps '_syntaxcheck.ps1' -Path '_app3d.html'`，
+# ⚠️ 第二个参数**必须叫 $Path**：调用处写的是 `& $ps $S_SYNTAX -Path $APP`，
 #    命名参数按名字绑定。之前写成 $p，`-Path` 匹配不上就被丢进 $args，
 #    $p 一直是 null，于是 _syntaxcheck.ps1 每次都因为「缺必填参数」退出 1 ——
 #    两步语法检查一路假红，而错误信息被 Step 的输出吞掉，只剩一个退出码。
-$ps = { param($f, $Path) if ($Path) { powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dir $f) -Path (Join-Path $dir $Path) } else { powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dir $f) } }
+# ⚠️ $f / $Path 现在都是**绝对路径**（来自 _paths.ps1），这里不再拼 $dir。
+#    再拼一次，路径就又有了第二个出处 —— 那正是 A 阶段要消掉的东西。
+$ps = { param($f, $Path) if ($Path) { powershell -NoProfile -ExecutionPolicy Bypass -File $f -Path $Path } else { powershell -NoProfile -ExecutionPolicy Bypass -File $f } }
 
-Step '1/16 构建'            { & $ps '_build.ps1' }
-Step '2/16 源码语法（注释/字符串配平）' { & $ps '_syntaxcheck.ps1' -Path '_app3d.html' }
-Step '3/16 成品语法（注释/字符串配平）' { & $ps '_syntaxcheck.ps1' -Path 'partridge-3d.html' }
+Step '1/16 构建'            { & $ps $S_BUILD }
+Step '2/16 源码语法（注释/字符串配平）' { & $ps $S_SYNTAX -Path $APP }
+Step '3/16 成品语法（注释/字符串配平）' { & $ps $S_SYNTAX -Path $PRODUCT }
 # ⚠️ 这两步不是「保险」，是 2026-09-30 真抓到一个把整个 app 打死的东西：
 #    frame() 里 `S.tSec += dt` 的 dt 全文件没声明过，每帧抛 ReferenceError、
 #    画面全黑，而当时语法检查、作用域体检、六套 harness、交付自检**全绿**。
-Step '4/16 源码自由变量（作用域链）'  { & $ps '_freevar.ps1' -Path '_app3d.html' }
-Step '5/16 成品自由变量（作用域链）'  { & $ps '_freevar.ps1' -Path 'partridge-3d.html' }
-Step '6/16 面板初始状态（生成注入探针）' { & $ps '_mkuistate.ps1' }
-Step '7/16 驾驶回归（生成）'  { & $ps '_mkdrive.ps1' }
-Step '8/16 车流+碰撞（生成）' { & $ps '_mktraffic.ps1' }
-Step '9/16 路段结构（生成）'   { & $ps '_mkroute.ps1' }
-Step '10/16 时段×天气（生成）'  { & $ps '_mkmood.ps1' }
-Step '11/16 自动巡航（生成）'   { & $ps '_mkcruise.ps1' }
-Step '12/16 鹧鸪状态机（生成）' { & $ps '_mkmoodstate.ps1' }
-Step '13/16 作用域体检'       { & $ps '_scopecheck.ps1' }
+Step '4/16 源码自由变量（作用域链）'  { & $ps $S_FREEVAR -Path $APP }
+Step '5/16 成品自由变量（作用域链）'  { & $ps $S_FREEVAR -Path $PRODUCT }
+Step '6/16 面板初始状态（生成注入探针）' { & $ps $S_MKUISTATE }
+Step '7/16 驾驶回归（生成）'  { & $ps $S_MKDRIVE }
+Step '8/16 车流+碰撞（生成）' { & $ps $S_MKTRAFFIC }
+Step '9/16 路段结构（生成）'   { & $ps $S_MKROUTE }
+Step '10/16 时段×天气（生成）'  { & $ps $S_MKMOOD }
+Step '11/16 自动巡航（生成）'   { & $ps $S_MKCRUISE }
+Step '12/16 鹧鸪状态机（生成）' { & $ps $S_MKMOODSTATE }
+Step '13/16 作用域体检'       { & $ps $S_SCOPE }
 Step '14/16 交付自检' {
-  $t = [IO.File]::ReadAllText((Join-Path $dir 'partridge-3d.html'))
-  $src = Get-Item (Join-Path $dir '_app3d.html')
-  $out = Get-Item (Join-Path $dir 'partridge-3d.html')
+  $t = [IO.File]::ReadAllText(($PRODUCT))
+  $src = Get-Item ($APP)
+  $out = Get-Item ($PRODUCT)
   # ⚠️ 别写成 @( @('名字', $值), ... )：PowerShell 的数组子表达式会把嵌套
   #    数组**展平**，结果 $c[0] 拿到的是上一个判据的值而不是名字。两条平行数组。
   $names = @('尾标记 </html>', 'requestAnimationFrame ×2', '无调试残留', '8 首音轨内嵌',
@@ -112,13 +117,13 @@ Step '14/16 交付自检' {
   Write-Output ("  源 {0:N0} / 成品 {1:N0} bytes" -f $src.Length, $out.Length)
   $script:fail += $bad
 }
-Step '15/16 作用域检查器自检（喂它一份已知坏样本）' { & $ps '_scopetest.ps1' }
+Step '15/16 作用域检查器自检（喂它一份已知坏样本）' { & $ps $S_SCOPETEST }
 Step '16/16 语法/自由变量/悬空调用 检查器自检' {
-  & $ps '_syntest.ps1'
-  & $ps '_freevartest.ps1'
-  & $ps '_linttest.ps1'
-  & $ps '_pagestest.ps1'
-  & $ps '_drivewires.ps1'
+  & $ps $S_SYNTEST
+  & $ps $S_FREEVARTEST
+  & $ps $S_LINTTEST
+  & $ps $S_PAGESTEST
+  & $ps $S_DRIVEWIRES
 }
 
 Write-Output ''
@@ -126,7 +131,7 @@ Write-Output ''
 # 逻辑在 _pages.ps1 里，单独拆出来是因为写在 checkall 里就**验不到它自己** ——
 # 想测「缺页会不会红」得先挪走一页，可第 9 步立刻会把它重新生成出来。
 # 它本身有 4 条反查（_pagestest.ps1），第 16 步会验。
-& $ps '_pages.ps1'
+& $ps $S_PAGES
 $pageBad = $LASTEXITCODE
 if ($pageBad -ne 0) { $fail++ }
 

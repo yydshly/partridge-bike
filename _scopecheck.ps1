@@ -14,8 +14,11 @@ $ErrorActionPreference = 'Stop'
 # 基线：整个 app 都在主 IIFE 里，所以顶层函数的声明深度是 **1**，不是 0。
 # 用法：_scopecheck.ps1            查 _app3d.html（入口 frame）
 #      _scopecheck.ps1 <文件> <入口函数名>
-$dir = 'E:\minimax_code_project\0929_project\partridge-bike'
-if (-not $File) { $File = Join-Path $dir '_app3d.html' }
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$dir = $ROOT
+if (-not $File) { $File = $APP }
 
 $raw = [IO.File]::ReadAllText($File) -split "`r`n|`n"
 # 先把字符串字面量和注释抹掉，免得里面的括号/花括号污染统计

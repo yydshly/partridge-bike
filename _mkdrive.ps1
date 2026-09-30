@@ -1,6 +1,9 @@
 ﻿$ErrorActionPreference = 'Stop'
-$dir = 'E:\minimax_code_project\0929_project\partridge-bike'
-$lines = [IO.File]::ReadAllLines((Join-Path $dir '_app3d.html'))
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$dir = $ROOT
+$lines = [IO.File]::ReadAllLines(($APP))
 
 # 抽出 frame() 里的驾驶块（油门/刹车 + 转向 + 边界 + **里程累加**），逐行原样复制，不手抄
 # ⚠️ 终止标记必须是 `S.km += v*dt/1000` 这一行本身，不能停在它上面那行 `const v = ...`。
@@ -49,11 +52,11 @@ if ($fb -lt 0) { throw 'cruiseTick end not found' }
 $cruise = (@($lines[$ca..$cb]) + @($lines[$fa..$fb])) -join "`n"
 "cruise block: app lines $($ca+1)..$($cb+1) + $($fa+1)..$($fb+1)"
 
-$tpl = [IO.File]::ReadAllText((Join-Path $dir '_driveharness.tpl.html'))
+$tpl = [IO.File]::ReadAllText(($TPL_DRIVE))
 $out = $tpl.Replace('/*__CRUISE__*/', "`n" + $cruise + "`n")
 $out = $out.Replace('/*__DRIVE__*/', $fnStr)
-[IO.File]::WriteAllText((Join-Path $dir '_driveharness.html'), $out, (New-Object Text.UTF8Encoding($false)))
-"harness bytes: {0:N0}" -f (Get-Item (Join-Path $dir '_driveharness.html')).Length
+[IO.File]::WriteAllText(($OUT_DRIVE), $out, (New-Object Text.UTF8Encoding($false)))
+"harness bytes: {0:N0}" -f (Get-Item ($OUT_DRIVE)).Length
 
 # ═══ 接线检查：切出来的东西必须**包含**该包含的 ═══
 # 2026-09-30 的真事故：切片终止在 `const v = S.speed / 3.6;`，
@@ -77,7 +80,7 @@ if ($wbad -gt 0) { throw "drive 接线检查失败 $wbad 条" }
 
 # 产品里那段驾驶逻辑必须**真的**在 if (S.running) 里面 ——
 # 「暂停时什么都不动」全靠它，而 harness 里的 run() 只是在模仿这个结构。
-$app = [IO.File]::ReadAllText((Join-Path $dir '_app3d.html'))
+$app = [IO.File]::ReadAllText(($APP))
 $kmAt = $app.IndexOf('S.km += v*dt/1000;')
 $guardAt = if ($kmAt -ge 0) { $app.LastIndexOf('if (S.running){', $kmAt) } else { -1 }
 $insideRun = $false
@@ -92,7 +95,7 @@ if ($kmAt -ge 0 -and $guardAt -ge 0) {
 Write-Output ("  {0}  产品里 S.km 的累加在 if (S.running) 里面" -f $(if($insideRun){'PASS'}else{'FAIL'}))
 if (-not $insideRun) { throw '产品里 S.km 的累加不在 if (S.running) 里 —— 暂停时里程还会涨' }
 
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dir '_harnesslint.ps1') -Path (Join-Path $dir '_driveharness.html')
+& powershell -NoProfile -ExecutionPolicy Bypass -File ($S_LINT) -Path ($OUT_DRIVE)
 # ⚠️ 这句 `exit` 千万不能少。2026-09-30：lint 明明报出了悬空调用、退出码是 1，
 #    但生成器正常跑完就返回 0，_checkall 只看 $LASTEXITCODE，于是判成「通过」。
 #    检查跑了、判对了、结论被丢掉 —— 和 frame() 缺 dt 是同一个家族。

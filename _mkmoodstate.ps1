@@ -2,8 +2,11 @@
 # 鹧鸪状态的回归。moodTick 设计成**只碰 S / MOOD / RIDERS** 的纯函数，
 # 就是为了能这么切出来用数值验 —— 它是这一节唯一能验的部分。
 # 姿态（rig 那几行）验不了，只能靠看，所以这里把能验的全验掉。
-$dir = 'E:\minimax_code_project\0929_project\partridge-bike'
-$lines = [IO.File]::ReadAllLines((Join-Path $dir '_app3d.html'))
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$dir = $ROOT
+$lines = [IO.File]::ReadAllLines(($APP))
 
 function Find([string]$pat, [int]$from = 0) {
   for ($i = $from; $i -lt $lines.Count; $i++) { if ($lines[$i] -match $pat) { return $i } }
@@ -33,14 +36,14 @@ $script:CUTS += ('  {0,-30} line {1}' -f 'approach', ($a+1))
 $mood = GrabBlock '^function moodTick\(dt\)\{'
 $script:CUTS | Write-Output
 
-$tpl = [IO.File]::ReadAllText((Join-Path $dir '_moodstate.tpl.html'))
+$tpl = [IO.File]::ReadAllText(($TPL_MOODSTATE))
 $tpl = $tpl.Replace('/*__APPROACH__*/', $approach)
 $tpl = $tpl.Replace('/*__MOODTICK__*/', "`n" + $mood + "`n")
-[IO.File]::WriteAllText((Join-Path $dir '_moodstate.html'), $tpl, (New-Object Text.UTF8Encoding($false)))
-"harness bytes: {0:N0}" -f (Get-Item (Join-Path $dir '_moodstate.html')).Length
+[IO.File]::WriteAllText(($OUT_MOODSTATE), $tpl, (New-Object Text.UTF8Encoding($false)))
+"harness bytes: {0:N0}" -f (Get-Item ($OUT_MOODSTATE)).Length
 
 # ---- 语法体检 ----
-$t = [IO.File]::ReadAllText((Join-Path $dir '_moodstate.html'))
+$t = [IO.File]::ReadAllText(($OUT_MOODSTATE))
 $js = [regex]::Match($t, '(?s)<script>(.*)</script>').Groups[1].Value
 $js = [regex]::Replace($js, '(?s)/\*.*?\*/', { param($m) ($m.Value -replace '[^\r\n]','') })
 $d = 0; $p = 0
@@ -55,6 +58,6 @@ foreach ($line in ($js -split "`r`n|`n")) {
 if ($d -ne 0) { throw "brace imbalance in harness" }
 if ($p -ne 0) { throw "paren imbalance in harness" }
 
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dir '_harnesslint.ps1') -Path (Join-Path $dir '_moodstate.html')
+& powershell -NoProfile -ExecutionPolicy Bypass -File ($S_LINT) -Path ($OUT_MOODSTATE)
 # ⚠️ 这句 `exit` 千万不能少 —— 见 _mkdrive.ps1 末尾的说明。
 exit $LASTEXITCODE

@@ -1,8 +1,13 @@
 ﻿param(
-  [string]$Dir    = 'E:\minimax_code_project\0929_project\partridge-bike',
+  [string]$Dir,
   [string]$Repo   = 'yydshly/partridge-bike',
   [switch]$NoPush
 )
+
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+if (-not $Dir) { $Dir = $ROOT }
 # 把成品发布到 GitHub Pages。
 #
 # 为什么用**独立的 gh-pages 分支**，而不是把 11.7 MB 的产物提交进 main：
@@ -17,9 +22,11 @@ $ErrorActionPreference = 'Stop'
 $stage = Join-Path $env:TEMP ('pkb-ghp-' + $Repo.Replace('/','-'))
 
 Write-Output '=== 1/5 构建 ==='
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Dir '_build.ps1')
+& powershell -NoProfile -ExecutionPolicy Bypass -File $S_BUILD
 if ($LASTEXITCODE -ne 0) { throw "构建失败（退出码 $LASTEXITCODE）" }
-$product = Join-Path $Dir 'partridge-3d.html'
+# 产物路径从 _paths.ps1 拿，不再自己拼 $Dir —— $Dir 只是发布脚本的入口参数，
+# 拿它当根目录就等于路径又有了第二个出处。
+$product = $PRODUCT
 $size = (Get-Item $product).Length
 Write-Output ("    产物 {0:N0} bytes" -f $size)
 if ($size -lt 5MB) { throw "产物只有 $size 字节，八成没构建对，先别推" }

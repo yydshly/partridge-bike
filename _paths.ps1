@@ -87,11 +87,45 @@ $TPL_CRUISEDIAG= "$DIR_TPL\_cruisediag.tpl.html"
 $TPL_MUSIC     = "$DIR_TPL\_musicharness.tpl.html"
 $TPL_BGM2      = "$DIR_TPL\_bgmharness2.tpl.html"
 
-# ── 生成页名（只列名字，目录由 $DIR_OUT 决定）─────────────────
+# ── 生成页（产物；不在 mustExist 里 —— 它们本来就可能还没生成）──
+# 单独列出来而不是只给一个名字数组：名字数组没法被迁移工具认出来，
+# 那一堆 `Join-Path $dir '_driveharness.html'` 就永远留在各个生成器里。
+$OUT_DRIVE     = "$DIR_OUT\_driveharness.html"
+$OUT_TRAFFIC   = "$DIR_OUT\_trafficharness.html"
+$OUT_ROUTE     = "$DIR_OUT\_routeharness.html"
+$OUT_MOOD      = "$DIR_OUT\_moodharness.html"
+$OUT_CRUISE    = "$DIR_OUT\_cruiseharness.html"
+$OUT_MOODSTATE = "$DIR_OUT\_moodstate.html"
+$OUT_UISTATE   = "$DIR_OUT\_uistate.html"
+$OUT_DIAG      = "$DIR_OUT\_cruisediag.html"      # _mkdiag 专用
+$OUT_DBG       = "$DIR_OUT\partridge-dbg.html"    # _mkdbg/_mkpause/_mkrec 专用
+
+# 页名（不含目录）—— _pages.ps1 清点、_pagestest.ps1 反查都用这个
 $OUT_NAMES = @(
   '_driveharness.html','_trafficharness.html','_routeharness.html',
   '_moodharness.html','_cruiseharness.html','_moodstate.html','_uistate.html'
 )
+
+# 每页的断言记号：常规 harness 记 ok()，_uistate 记 uok()。
+# 不在表里的一律按 ok 处理 —— 新页默认就被清点，是安全的那一侧。
+$OUT_TOKENS = @{ '_uistate.html' = 'uok' }
+
+# 反查（_pagestest.ps1）要动的三页。写在这儿而不是测试脚本里，是因为
+# 「哪几页适合当反查靶子」是关于**这套页**的知识 ——
+# 抄到测试脚本里就多一个会过期的地方，而过期的后果特别阴：
+# 页被改名后反查去测一个不存在的文件，_pages.ps1 对着不存在的文件当然 exit 0，
+# 四条反查于是全绿 —— 测的是一个已经不存在的东西。
+$OUT_PROBE_MISSING = '_uistate.html'   # 当「缺页」靶子（也是唯一用 uok 的那页）
+$OUT_PROBE_EMPTY   = '_moodharness.html' # 当「页在但零断言」靶子
+$OUT_PROBE_COMMENT = '_routeharness.html' # 当「注释里的 ok( 不算断言」靶子（必须用 ok 页）
+
+$outProbe = @($OUT_PROBE_MISSING, $OUT_PROBE_EMPTY, $OUT_PROBE_COMMENT)
+$outProbeGone = @($outProbe | Where-Object { $OUT_NAMES -notcontains $_ })
+if ($outProbeGone.Count -gt 0) {
+  throw ("_paths.ps1 自检失败：反查用的页名不在 `$OUT_NAMES 里 -> " +
+         [string]::Join(' ', $outProbeGone) +
+         "`n页被改名/删除过，但 _pagestest.ps1 的反查还指着它 —— 那四条反查现在测的是一个不存在的文件。")
+}
 
 # ── 自检：所有**必须存在**的路径，缺一个就当场炸 ──────────────
 #  这条是整个收口的地基：搬目录时路径写错，错误会在第一秒暴露，

@@ -2,6 +2,9 @@
 # 验 _mkdrive.ps1 里那条「S.km 的累加在 if (S.running) 里面」不是恒过的。
 # 判据本身是从 if (S.running){ 起到里程那行为止的花括号是否**还没配平**。
 $ErrorActionPreference = 'Stop'
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
 
 function Test-Inside([string]$app) {
   $kmAt = $app.IndexOf('S.km += v*dt/1000;')

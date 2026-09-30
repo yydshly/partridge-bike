@@ -2,6 +2,9 @@
 # 按 1 基行号把 $Target 的 [$From..$To] 整段换成 $New 的内容。
 # 保留原文件的 BOM 状态和行尾。插完立刻报结构，方便当场验。
 $ErrorActionPreference = 'Stop'
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
 
 $bytes = [IO.File]::ReadAllBytes($Target)
 $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)

@@ -1,10 +1,13 @@
 ﻿$ErrorActionPreference = 'Stop'
-$dir = 'E:\minimax_code_project\0929_project\partridge-bike'
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$dir = $ROOT
 $enc = New-Object Text.UTF8Encoding($false)
 
 # ---- 1. the track table: base64-inlined so the HTML stays a single file ----
 # 曲目定义在 _bgm-meta.json —— 加歌 = 改那个文件 + 放 mp3 进来，不用动这个脚本
-$meta  = [IO.File]::ReadAllText((Join-Path $dir '_bgm-meta.json')) | ConvertFrom-Json
+$meta  = [IO.File]::ReadAllText(($BGM_META)) | ConvertFrom-Json
 $tracks = $meta.tracks
 
 # 歌词要转成 JS 字符串数组。中文直接进 JS 字面量没问题（成品是 UTF-8），
@@ -33,11 +36,11 @@ $bgm = $sb.ToString()
 $lib = [IO.File]::ReadAllText((Join-Path $dir '_vendor\three149.min.js')) -replace '(?i)</script','<\/script'
 
 # ---- 3. splice both into the template ----
-$tpl = [IO.File]::ReadAllText((Join-Path $dir '_app3d.html'))
+$tpl = [IO.File]::ReadAllText(($APP))
 $html = $tpl.Replace('/*__BGM_TRACKS__*/', $bgm).Replace('/*__THREE__*/', $lib)
-[IO.File]::WriteAllText((Join-Path $dir 'partridge-3d.html'), $html, $enc)
+[IO.File]::WriteAllText(($PRODUCT), $html, $enc)
 
-$size = (Get-Item (Join-Path $dir 'partridge-3d.html')).Length
+$size = (Get-Item ($PRODUCT)).Length
 "built partridge-3d.html  {0:N0} bytes  ({1:N1} MB)" -f $size, ($size/1MB)
 "tracks inlined: $($tracks.Count)"
 $withLyrics = ($tracks | Where-Object { $_.lyrics }).Count

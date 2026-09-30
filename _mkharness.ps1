@@ -1,19 +1,25 @@
 ﻿$ErrorActionPreference = 'Stop'
-$dir = 'E:\minimax_code_project\0929_project\partridge-bike'
-$app   = [IO.File]::ReadAllText((Join-Path $dir '_app3d.html'))
-$built = [IO.File]::ReadAllText((Join-Path $dir 'partridge-3d.html'))
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$dir = $ROOT
+$app   = [IO.File]::ReadAllText(($APP))
+$built = [IO.File]::ReadAllText(($PRODUCT))
 
 # ---- 1. base64 integrity: decode every blob back out of the built HTML and
 #         compare byte-for-byte against the mp3 still sitting on disk ----
 $rx = [regex]'\{title:''(?<t>[^'']+)'', vocal:(?<v>true|false), lyrics:\[(?<l>[^\]]*)\], b64:''(?<b>[A-Za-z0-9+/=]+)''\}'
 $ms = $rx.Matches($built)
 "built tracks matched: $($ms.Count)"
+# 这八个名字**故意硬写**：这份脚本的职责就是拿「独立抄一遍的名单」去核对
+# _bgm-meta.json 和成品里的 base64 —— 如果改成从 _bgm-meta.json 读，
+# 就变成自己跟自己比，恒过。目录仍然走 $DIR_BGM（那个才是路径的出处）。
 $names = @('bgm-1-sunset.mp3','bgm-2-wind.mp3','bgm-3-road.mp3','bgm-4-dusk.mp3',
            'bgm-5-slow.mp3','bgm-6-wind.mp3','bgm-7-quiet.mp3','bgm-8-onward.mp3')
 $bad = 0
 for ($i = 0; $i -lt $ms.Count; $i++){
   $bytes = [Convert]::FromBase64String($ms[$i].Groups['b'].Value)
-  $disk  = [IO.File]::ReadAllBytes((Join-Path $dir $names[$i]))
+  $disk  = [IO.File]::ReadAllBytes((Join-Path $DIR_BGM $names[$i]))
   $same  = ($bytes.Length -eq $disk.Length)
   if ($same){
     for ($k = 0; $k -lt $bytes.Length -and $same; $k++){ if ($bytes[$k] -ne $disk[$k]){ $same = $false } }
@@ -27,7 +33,7 @@ for ($i = 0; $i -lt $ms.Count; $i++){
 
 # ---- 2. build the harness: real player block, real track metadata, tiny fake b64 ----
 # 按行号取，别用字符匹配 —— 标题里那一长串横线数错了很难查
-$appLines = [IO.File]::ReadAllLines((Join-Path $dir '_app3d.html'))
+$appLines = [IO.File]::ReadAllLines(($APP))
 $sLine = -1; $eLine = -1
 for ($i = 0; $i -lt $appLines.Count; $i++){
   if ($sLine -lt 0 -and $appLines[$i] -match '^/\* .* background music'){ $sLine = $i }
@@ -58,7 +64,7 @@ if ($block -notmatch [regex]::Escape("b64:'$fakeB64'")){ throw 'splice failed' }
 $exp = @(); foreach ($n in $names){ $exp += 8 }
 $expJs = '[' + ($exp -join ',') + ']'
 
-$tpl     = [IO.File]::ReadAllText((Join-Path $dir '_bgmharness2.tpl.html'))
+$tpl     = [IO.File]::ReadAllText(($TPL_BGM2))
 $harness = $tpl.Replace('/*__BGM__*/', $block).Replace('__EXPECT__', $expJs)
 [IO.File]::WriteAllText((Join-Path $dir '_bgmharness2.html'), $harness, (New-Object Text.UTF8Encoding($false)))
 "harness bytes: {0:N0}" -f (Get-Item (Join-Path $dir '_bgmharness2.html')).Length

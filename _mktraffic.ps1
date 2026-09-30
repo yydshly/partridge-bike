@@ -1,6 +1,9 @@
 ﻿$ErrorActionPreference = 'Stop'
-$dir = 'E:\minimax_code_project\0929_project\partridge-bike'
-$lines = [IO.File]::ReadAllLines((Join-Path $dir '_app3d.html'))
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$dir = $ROOT
+$lines = [IO.File]::ReadAllLines(($APP))
 
 function Find-Idx([string]$pat, [int]$from = 0) {
   for ($i = $from; $i -lt $lines.Count; $i++) { if ($lines[$i] -match $pat) { return $i } }
@@ -71,15 +74,15 @@ $bj = $body -join "`n"
 if ($bj -notmatch 'S\.hitT') { throw "extracted block has no collision cooldown (S.hitT) — cut the wrong thing" }
 if ($bj -match 'function cruiseTick') { throw "extracted block swallowed cruiseTick — the RIDERS loop match is ambiguous" }
 
-$tpl = [IO.File]::ReadAllText((Join-Path $dir '_trafficharness.tpl.html'))
+$tpl = [IO.File]::ReadAllText(($TPL_TRAFFIC))
 $tpl = $tpl.Replace('/*__LANES__*/',   $lanes)
 $tpl = $tpl.Replace('/*__LAYOUT__*/',  "`n" + $layout + "`n")
 $tpl = $tpl.Replace('/*__TRAFFIC__*/', "`n" + ($body -join "`n") + "`n")
-[IO.File]::WriteAllText((Join-Path $dir '_trafficharness.html'), $tpl, (New-Object Text.UTF8Encoding($false)))
-"harness bytes: {0:N0}" -f (Get-Item (Join-Path $dir '_trafficharness.html')).Length
+[IO.File]::WriteAllText(($OUT_TRAFFIC), $tpl, (New-Object Text.UTF8Encoding($false)))
+"harness bytes: {0:N0}" -f (Get-Item ($OUT_TRAFFIC)).Length
 
 # ---- 语法体检：括号配平 + 查有没有漏掉的大写标识符 ----
-$t = [IO.File]::ReadAllText((Join-Path $dir '_trafficharness.html'))
+$t = [IO.File]::ReadAllText(($OUT_TRAFFIC))
 $js = [regex]::Match($t, '(?s)<script>(.*)</script>').Groups[1].Value
 $noStr = [regex]::Replace($js, "'(\\.|[^'\\])*'", "''")
 $noStr = [regex]::Replace($noStr, '"(\\.|[^"\\])*"', '""')
@@ -87,7 +90,7 @@ $noStr = [regex]::Replace($noStr, '//.*$', '')
 $noStr = [regex]::Replace($noStr, '/\*.*?\*/', '')
 "paren balance : {0}" -f (([regex]::Matches($noStr,'\(')).Count - ([regex]::Matches($noStr,'\)')).Count)
 "brace balance : {0}" -f (([regex]::Matches($noStr,'\{')).Count - ([regex]::Matches($noStr,'\}')).Count)
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dir '_harnesslint.ps1') -Path (Join-Path $dir '_trafficharness.html')
+& powershell -NoProfile -ExecutionPolicy Bypass -File ($S_LINT) -Path ($OUT_TRAFFIC)
 # ⚠️ 这句 `exit` 千万不能少 —— 见 _mkdrive.ps1 末尾的说明：
 #    子检查器失败了，但生成器不把退出码传出去，_checkall 就会判成「通过」。
 exit $LASTEXITCODE

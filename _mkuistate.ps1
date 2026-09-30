@@ -10,9 +10,12 @@
 #
 # 注入点：最后一个 `\n})();`。产物末尾就是这个，所以能精确定位。
 $ErrorActionPreference = 'Stop'
-$dir = 'E:\minimax_code_project\0929_project\partridge-bike'
-$src = Join-Path $dir 'partridge-3d.html'
-$out = Join-Path $dir '_uistate.html'
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$dir = $ROOT
+$src = $PRODUCT
+$out = $OUT_UISTATE
 if (-not (Test-Path $src)) { throw "先跑 _build.ps1：找不到 $src" }
 
 $t = [IO.File]::ReadAllText($src)
@@ -337,5 +340,5 @@ document.title = (bad.length ? 'FAIL ' : 'PASS ') + R.filter(x=>x[0]===true).len
 $t = $t.Substring(0, $i) + "`n" + $probe + $t.Substring($i)
 [IO.File]::WriteAllText($out, $t, (New-Object Text.UTF8Encoding($false)))
 "wrote {0}  {1:N0} bytes" -f (Split-Path $out -Leaf), (Get-Item $out).Length
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dir '_syntaxcheck.ps1') -Path $out
+& powershell -NoProfile -ExecutionPolicy Bypass -File ($S_SYNTAX) -Path $out
 exit $LASTEXITCODE

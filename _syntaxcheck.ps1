@@ -22,6 +22,9 @@ param(
   [switch]$Quiet
 )
 $ErrorActionPreference = 'Stop'
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
 
 if (-not ('JsLex' -as [type])) {
   Add-Type -TypeDefinition @'

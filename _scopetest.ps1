@@ -1,6 +1,9 @@
 ﻿$ErrorActionPreference = 'Stop'
-$d = 'E:\minimax_code_project\0929_project\partridge-bike'
-$p = Join-Path $d '_scopecheck.ps1'
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$d = $ROOT
+$p = $S_SCOPE
 $t = [IO.File]::ReadAllText($p, (New-Object Text.UTF8Encoding($false)))
 [IO.File]::WriteAllText($p, $t, (New-Object Text.UTF8Encoding($true)))
 cd $d
@@ -11,7 +14,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\_scopecheck.ps1
 
 Write-Output ''
 Write-Output '=== 2) 反向验证：把 hitQuip 塞回 rotateCaption 体内的坏副本（应该 FAIL）==='
-$src = [IO.File]::ReadAllText((Join-Path $d '_app3d.html'))
+$src = [IO.File]::ReadAllText(($APP))
 $nl = if ($src.Contains("`r`n")) { "`r`n" } else { "`n" }
 
 # 精确重建原来的 bug 形状：rotateCaption 先开一个口，hitQuip 声明在它体内

@@ -6,9 +6,12 @@
 # 把 canvas 拷进一个尺寸写死的 2D 画布贴到页面最上层，然后截屏。
 # ⚠️ 调试画布必须显式写 style 的 width/height —— 页面里有一条
 #    canvas{width:100%;height:100%}，只设 width/height 属性会被拉成整屏。
-$dir = 'E:\minimax_code_project\0929_project\partridge-bike'
-$out = Join-Path $dir 'partridge-dbg.html'
-$t = [IO.File]::ReadAllText((Join-Path $dir 'partridge-3d.html'))
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$dir = $ROOT
+$out = $OUT_DBG
+$t = [IO.File]::ReadAllText(($PRODUCT))
 
 $hook = @'
 /* __DBG__ */

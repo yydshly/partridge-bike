@@ -4,9 +4,12 @@
 #          ② 拿修好的真源码，要求它 PASS。
 # 只验 ② 的话，一把永远说「没事」的尺子也能过。
 $ErrorActionPreference = 'Stop'
-$dir  = 'E:\minimax_code_project\0929_project\partridge-bike'
-$tool = Join-Path $dir '_syntaxcheck.ps1'
-$src  = Join-Path $dir '_app3d.html'
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$dir = $ROOT
+$tool = $S_SYNTAX
+$src  = $APP
 $bad  = Join-Path $dir '_synbad.html'
 $fail = 0
 

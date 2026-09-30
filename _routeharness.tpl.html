@@ -44,7 +44,8 @@ const vgFarm=()=>'vgFarm', vgPond=()=>'vgPond', vgTower=()=>'vgTower', vgMill=()
 /* ---- 断言 ---- */
 const L = [];
 let bad = 0;
-const ok = (c, m) => { L.push((c?'  PASS  ':'  FAIL  ') + m); if(!c) bad++; };
+let N = 0;
+const ok = (c, m) => { N++; L.push((c?'  PASS  ':'  FAIL  ') + m); if(!c) bad++; };
 const reset = (km=0) => { S.km = km; S.seg = -1; S.capT = 0; CAP = ''; JUMPS = [];
                           mkSlots(); VIG_MAKERS = null; KM_STONES = [];
                           BGM.i = 0; BGM.manual = false; BGM.ready = true; BGM.el.currentTime = 60;
@@ -168,5 +169,9 @@ ok(caps === ROUTE.length,
 
 L.push('');
 L.push(bad === 0 ? '全部通过 ✓' : bad + ' 项失败 ✗');
+// 真条数写进标题。L.length 不能用 —— L 里混着段标题，不是断言数。
+// _checkall 收尾那句「看标题 PASS n/m」的唯一依据就是这一行，
+// 所以七套 harness 每套都必须有；_pages.ps1 的反查盯着这件事。
+document.title = (bad ? 'FAIL ' : 'PASS ') + (N - bad) + '/' + N;
 document.getElementById('o').textContent = L.join('\n');
 </script></body></html>

@@ -6,9 +6,12 @@
 # 并且**点名 dt**。点名很关键：只报「有 1 个自由变量」的话，删别的也一样会 FAIL，
 # 抓不到真问题也算一种恒过。
 $ErrorActionPreference = 'Stop'
-$dir = 'E:\minimax_code_project\0929_project\partridge-bike'
-$src = Join-Path $dir '_app3d.html'
-$chk = Join-Path $dir '_freevar.ps1'
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$dir = $ROOT
+$src = $APP
+$chk = $S_FREEVAR
 $fail = 0
 
 function Run-Check($p) {

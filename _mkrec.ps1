@@ -5,9 +5,12 @@
 # ⚠️ 后台标签页里 rAF 被冻结，画面不出帧，MediaRecorder 会安静地录出
 #    一个「能播放但没内容」的文件。所以这里**自己同步调 frame()** 制造画面，
 #    并把 clock 钉成 1/60 —— 这样录到的是真帧。
-$dir = 'E:\minimax_code_project\0929_project\partridge-bike'
-$out = Join-Path $dir 'partridge-dbg.html'
-$t = [IO.File]::ReadAllText((Join-Path $dir 'partridge-3d.html'))
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$dir = $ROOT
+$out = $OUT_DBG
+$t = [IO.File]::ReadAllText(($PRODUCT))
 
 $hook = @'
 /* __DBG__ */

@@ -3,8 +3,11 @@
 # 这一节为什么必须有数值回归：打方向的**符号**错了，画面上只表现为
 # 「车在路中间画圈」或者「一开巡航就冲下路肩」—— 看截图分不出是
 # 「控制器极性反了」还是「增益不对」，反了以后有时看着还挺顺眼。
-$dir = 'E:\minimax_code_project\0929_project\partridge-bike'
-$lines = [IO.File]::ReadAllLines((Join-Path $dir '_app3d.html'))
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$dir = $ROOT
+$lines = [IO.File]::ReadAllLines(($APP))
 
 function Find([string]$pat, [int]$from = 0) {
   for ($i = $from; $i -lt $lines.Count; $i++) { if ($lines[$i] -match $pat) { return $i } }
@@ -68,19 +71,19 @@ $src += GrabBlock '^function cruiseTick\(dt\)\{'
 $src += GrabLines 'S\.steerIn = S\.cruise \? cruiseTick\(dt\)' 1
 $script:CUTS | Write-Output
 
-$tpl = [IO.File]::ReadAllText((Join-Path $dir '_cruiseharness.tpl.html'))
+$tpl = [IO.File]::ReadAllText(($TPL_CRUISE))
 $tpl = $tpl.Replace('/*__CRUISE__*/', "`n" + ($src -join "`n") + "`n")
 $tpl = $tpl.Replace('/*__LANES__*/',  $lanes)
 $tpl = $tpl.Replace('/*__LAYOUT__*/', "`n" + $layout + "`n")
-[IO.File]::WriteAllText((Join-Path $dir '_cruiseharness.html'), $tpl, (New-Object Text.UTF8Encoding($false)))
-"harness bytes: {0:N0}" -f (Get-Item (Join-Path $dir '_cruiseharness.html')).Length
+[IO.File]::WriteAllText(($OUT_CRUISE), $tpl, (New-Object Text.UTF8Encoding($false)))
+"harness bytes: {0:N0}" -f (Get-Item ($OUT_CRUISE)).Length
 
 # ---- 语法体检：花括号和圆括号都要查 ----
 # ⚠️ 圆括号也得查：只查花括号的话，「只切走构造器第一行」这种错误查不出来。
 # ⚠️ 块注释必须**在切行之前**整体剥掉。按行剥是剥不干净的 ——
 #    /* 第一行 … 第二行 { … */ 会被当成两行代码，注释里的花括号
 #    就被算进配平。注释里出现一个 `const M = {` 就够让人以为源码少了个花括号。
-$t = [IO.File]::ReadAllText((Join-Path $dir '_cruiseharness.html'))
+$t = [IO.File]::ReadAllText(($OUT_CRUISE))
 $js = [regex]::Match($t, '(?s)<script>(.*)</script>').Groups[1].Value
 $js = [regex]::Replace($js, '(?s)/\*.*?\*/', { param($m) ($m.Value -replace '[^\r\n]','') })
 $d = 0; $p = 0
@@ -96,7 +99,7 @@ if ($d -ne 0) { throw "brace imbalance in harness" }
 if ($p -ne 0) { throw "paren imbalance in harness" }
 
 # ---- 接线体检：光有控制器不够，得真的被喂进 steerIn ----
-$src2 = [IO.File]::ReadAllText((Join-Path $dir '_app3d.html'))
+$src2 = [IO.File]::ReadAllText(($APP))
 $checks = @(
   @('巡航时才吃 cruiseTick',  'S\.steerIn = S\.cruise \? cruiseTick\(dt\) :'),
   @('手动仍只读键盘',         ': \(keys\.right \? 1 : 0\) - \(keys\.left \? 1 : 0\);'),
@@ -115,6 +118,6 @@ foreach ($c in $checks){
   Write-Output ("  {0}  {1}" -f $(if($o){'PASS'}else{'FAIL'}), $c[0])
 }
 if ($bad -gt 0) { throw 'cruise wiring check failed' }
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dir '_harnesslint.ps1') -Path (Join-Path $dir '_cruiseharness.html')
+& powershell -NoProfile -ExecutionPolicy Bypass -File ($S_LINT) -Path ($OUT_CRUISE)
 # ⚠️ 这句 `exit` 千万不能少 —— 见 _mkdrive.ps1 末尾的说明。
 exit $LASTEXITCODE

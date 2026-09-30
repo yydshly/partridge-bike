@@ -2,9 +2,12 @@
 # 造一份**已知坏**的 harness（引用一个没定义的东西），要求 lint 抓到它；
 # 再造一份正常的，要求 lint 放过。两边都对了才说明这把尺子准。
 $ErrorActionPreference = 'Stop'
-$dir = 'E:\minimax_code_project\0929_project\partridge-bike'
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$dir = $ROOT
 $tmp = Join-Path $dir '_linttest.html'
-$lint = Join-Path $dir '_harnesslint.ps1'
+$lint = $S_LINT
 $fail = 0
 
 function Run-Lint($p) {
@@ -64,11 +67,15 @@ foreach ($c in $cases) {
 $ErrorActionPreference = 'Continue'
 $realLint = [IO.File]::ReadAllText($lint)
 $propResults = @()
+# 六个生成器的真实路径。**只在这里定义一次** ——
+# 原来下面两个循环各抄一遍文件名，抄漏一个就会让「退出码传播」只验到 5 个，
+# 而输出那一栏看着照样是一排 PASS。
+$gens = @($S_MKMOODSTATE, $S_MKROUTE, $S_MKCRUISE, $S_MKTRAFFIC, $S_MKDRIVE, $S_MKMOOD)
 try {
   # 替身：无条件退出 1，什么都不检查
   [IO.File]::WriteAllText($lint, "exit 1`r`n", (New-Object Text.UTF8Encoding($true)))
-  foreach ($gen in '_mkmoodstate.ps1','_mkroute.ps1','_mkcruise.ps1','_mktraffic.ps1','_mkdrive.ps1','_mkmood.ps1') {
-    $o = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dir $gen) 2>&1
+  foreach ($gen in $gens) {
+    $o = & powershell -NoProfile -ExecutionPolicy Bypass -File $gen 2>&1
     $code = $LASTEXITCODE
     $propResults += @{ gen = $gen; code = $code; out = ($o -join "`n") }
   }
@@ -76,14 +83,14 @@ try {
   [IO.File]::WriteAllText($lint, $realLint, (New-Object Text.UTF8Encoding($true)))
 }
 # 替身期间生成出来的 harness 可能是坏的（lint 被换掉了）→ 全部重新生成一遍
-foreach ($gen in '_mkmoodstate.ps1','_mkroute.ps1','_mkcruise.ps1','_mktraffic.ps1','_mkdrive.ps1','_mkmood.ps1') {
-  $null = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dir $gen) 2>&1
+foreach ($gen in $gens) {
+  $null = & powershell -NoProfile -ExecutionPolicy Bypass -File $gen 2>&1
 }
 Write-Output '=== 退出码传播：lint 必失败时，生成器必须非 0 ==='
 foreach ($p in $propResults) {
   $ok = ($p.code -ne 0)
   if (-not $ok) { $fail++ }
-  Write-Output ("  {0}  {1,-18} 退出码 {2}（必须 ≠0）" -f $(if($ok){'PASS'}else{'FAIL'}), $p.gen, $p.code)
+  Write-Output ("  {0}  {1,-18} 退出码 {2}（必须 ≠0）" -f $(if($ok){'PASS'}else{'FAIL'}), (Split-Path $p.gen -Leaf), $p.code)
   if (-not $ok) { Write-Output ('        ' + ($p.out -replace "`r?`n", ' | ')) }
 }
 
@@ -92,9 +99,9 @@ foreach ($p in $propResults) {
 # 「六个都返回 1」也可能只是因为无论写什么都返回 1。
 $ErrorActionPreference = 'Continue'
 $noProp = Join-Path $dir '_mknoprop.ps1'
-$srcG = [IO.File]::ReadAllText((Join-Path $dir '_mkroute.ps1'))
+$srcG = [IO.File]::ReadAllText(($S_MKROUTE))
 $srcG = [regex]::Replace($srcG, '(?m)^exit \$LASTEXITCODE\s*$', '')
-if ($srcG -eq [IO.File]::ReadAllText((Join-Path $dir '_mkroute.ps1'))) {
+if ($srcG -eq [IO.File]::ReadAllText(($S_MKROUTE))) {
   Write-Output '  FAIL  没能在 _mkroute.ps1 里找到 exit $LASTEXITCODE 这一行（写法变了？反查失效）'
   $fail++
 }
@@ -106,7 +113,7 @@ try {
 } finally {
   [IO.File]::WriteAllText($lint, $realLint, (New-Object Text.UTF8Encoding($true)))
   if (Test-Path $noProp) { mavis-trash $noProp }
-  $null = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dir '_mkroute.ps1') 2>&1
+  $null = & powershell -NoProfile -ExecutionPolicy Bypass -File ($S_MKROUTE) 2>&1
 }
 $npOk = ($npCode -eq 0)   # 期望它**就是 0**（不传播），这样判据才会判 FAIL
 if (-not $npOk) { $fail++ }

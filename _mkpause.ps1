@@ -3,9 +3,12 @@
 # 上一版探针直接写 S.running，把按钮文案那行绕过去了 —— 探针绕过的代码
 # 正是出问题的代码，测它就等于没测。
 # 顺便把暂停中的画面 render 一帧、拷进显式尺寸的 2D 画布，好截屏看观感。
-$dir = 'E:\minimax_code_project\0929_project\partridge-bike'
-$out = Join-Path $dir 'partridge-dbg.html'
-$t = [IO.File]::ReadAllText((Join-Path $dir 'partridge-3d.html'))
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+$dir = $ROOT
+$out = $OUT_DBG
+$t = [IO.File]::ReadAllText(($PRODUCT))
 
 $hook = @'
 /* __DBG__ */
@@ -120,4 +123,3 @@ $lineStart = $t.LastIndexOf("`n", $i) + 1
 $t = $t.Substring(0, $lineStart) + $hook + "`n" + $t.Substring($lineStart)
 [IO.File]::WriteAllText($out, $t, (New-Object Text.UTF8Encoding($false)))
 "wrote: {0:N0} bytes" -f (Get-Item $out).Length
-
