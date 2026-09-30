@@ -3,13 +3,19 @@ $p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = 
 if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
 . (Join-Path $p '_paths.ps1')
 $d = $ROOT
-$p = $S_SCOPE
-$t = [IO.File]::ReadAllText($p, (New-Object Text.UTF8Encoding($false)))
-[IO.File]::WriteAllText($p, $t, (New-Object Text.UTF8Encoding($true)))
+# ⚠️ 这里原来叫 $p —— 和上面「往上找 _paths.ps1」的 $p 是两个完全不同的东西，
+#    同一个变量名在 5 行之内换了含义。改名叫 $tool。
+$tool = $S_SCOPE
+$t = [IO.File]::ReadAllText($tool, (New-Object Text.UTF8Encoding($false)))
+[IO.File]::WriteAllText($tool, $t, (New-Object Text.UTF8Encoding($true)))
 cd $d
 
 Write-Output '=== 1) 现在的源码（应该 PASS）==='
-powershell -NoProfile -ExecutionPolicy Bypass -File .\_scopecheck.ps1
+# ⚠️ 原来写的是 `-File .\_scopecheck.ps1` —— **相对当前工作目录**的路径。
+#    本脚本自己会 cd，所以在这儿看不出问题；但那是路径的第二个出处，
+#    换个 CWD 跑就找不到文件，而 B 阶段把脚本搬进 checks\ 之后更是直接失效。
+#    路径只能来自 _paths.ps1。
+powershell -NoProfile -ExecutionPolicy Bypass -File $tool
 "exit=$LASTEXITCODE"
 
 Write-Output ''
@@ -31,7 +37,7 @@ $tmp = Join-Path $d '_scopecheck_mutant.html'
 Select-String -LiteralPath $tmp -Pattern 'function rotateCaption\(|function hitQuip\(' -Encoding UTF8 |
   ForEach-Object { "   mutant 第 $($_.LineNumber) 行: $($_.Line.Trim())" }
 
-powershell -NoProfile -ExecutionPolicy Bypass -File .\_scopecheck.ps1 $tmp frame
+powershell -NoProfile -ExecutionPolicy Bypass -File $tool $tmp frame
 $rc = $LASTEXITCODE
 Write-Output "exit=$rc"
 

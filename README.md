@@ -21,7 +21,7 @@
 ## 或者本地跑
 
 克隆下来**直接双击是打不开的**。这个仓库只存源，11.7 MB 的
-`partridge-3d.html` 是构建产物，不在版本库里。
+`parridge-3d.html` 是构建产物，不在版本库里。
 
 ```powershell
 git clone https://github.com/yydshly/partridge-bike.git
@@ -30,13 +30,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\_build.ps1
 ```
 
 看到 `built partridge-3d.html  11,732,169 bytes` 就成了，
-之后**双击 `partridge-3d.html`** 即可运行（`file://` 直开，不需要起服务）。
+之后**双击 `dist\parridge-3d.html`** 即可运行（`file://` 直开，不需要起服务）。
 
 **为什么不把成品提交进 `main`**：它是 252 KB 的 `_app3d.html` 拼出来的，
 改一行源码就产生一个 11.7 MB 的新 blob。几轮改动后 `.git` 就会膨胀到
 几百 MB，而换不回任何信息——那些内容都能重建。要部署就用 `gh-pages` 分支。
 `_build.ps1` 需要三样东西，全都在仓库里：`_app3d.html`、`bgm-1..8.mp3`、
 `_vendor/three149.min.js`。
+
+**目录约定**：根目录放**源**，`dist\` 放**产物**（成品 + 七个回归页 +
+诊断页/实拍页），整目录在 `.gitignore` 里。`dist\` 由 `_paths.ps1`
+自动创建——跑任何脚本都不用先手动建它。
 
 ## 怎么玩
 
@@ -77,12 +81,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\_build.ps1
 | `_app3d.html` | **唯一可编辑源**（252 KB，带两个占位符） |
 | `bgm-1..8.mp3` | 配乐源文件（8.2 MB，AI 生成，不可再生） |
 | `_vendor/three149.min.js` | three.js r149，构建时内联 |
-| `_build.ps1` | 把上面三样拼成 `partridge-3d.html` |
+| `_paths.ps1` | **全仓库路径的唯一出处**（下面每一个路径都从它来） |
+| `_build.ps1` | 把上面三样拼成 `dist\parridge-3d.html` |
 | `_checkall.ps1` | **一条命令跑完全部验证**（16 步） |
 | `_*.tpl.html`（9 个） | 回归页模板，套桩用 |
 | `_*.ps1` | 生成器与检查器 |
+| `dist/` | 全部产物：成品 + 7 个回归页 + 诊断页/实拍页（整目录 gitignore） |
 | `AGENTS.md` | 项目记忆与方法论（踩过的坑都在里面） |
-| `.gitignore` | 排除 9 个产物：1 个成品 + 1 个探针 + 7 个回归页 |
+| `.gitignore` | 排除 `dist\`（= 9 个产物：1 成品 + 1 探针 + 7 回归页） |
+
+**路径只有一处出处。** 28 个脚本开头都是这三行，往上找 `_paths.ps1`：
+
+```powershell
+$p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
+if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
+. (Join-Path $p '_paths.ps1')
+```
+
+所以**搬目录、改文件名、挪产物位置，只改 `_paths.ps1` 里的目录定义**，
+其余文件一个字都不用动。`_paths.ps1` 末尾会自查 36 个必须存在的路径，
+搬错了在第一秒就炸，而不是等到某个 harness 静默跑空、而所有检查照样全绿。
 
 **`.ps1` 必须是 UTF-8 with BOM。** 少了 BOM，PowerShell 5.1 会按 ANSI
 解码中文，报出来的是莫名其妙的 `Unexpected token`，看起来像语法写错、
@@ -98,18 +116,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\_checkall.ps1
 → 面板状态探针 → 作用域体检 → 交付自检 → 五套检查器的自检。
 
 **它只证明「能生成、能通过静态检查」，证明不了画面。** 画面只能靠真机打开
-`partridge-3d.html` 看一眼——2026-09-30 就交过一版**所有检查全绿、画面全黑**
+`dist\parridge-3d.html` 看一眼——2026-09-30 就交过一版**所有检查全绿、画面全黑**
 的成品（`frame()` 里用了没声明的 `dt`，每帧抛 `ReferenceError`）。
 所以**冒烟测试是交付流程的一部分，不是可选项**。
 
-七套回归页是浏览器页面，脚本生成不了结论，要人眼各开一次（标题会变成
-`PASS n/m`，那个才是这次的真实条数）：
+七套回归页在 `dist\`，是浏览器页面，脚本生成不了结论，要人眼各开一次
+（标题会变成 `PASS n/m`，那个才是这次的真实条数）：
 
-`_driveharness` · `_trafficharness` · `_routeharness` · `_moodharness` ·
-`_cruiseharness` · `_moodstate` · `_uistate`
+`dist\_driveharness.html` · `dist\_trafficharness.html` · `dist\_routeharness.html` ·
+`dist\_moodharness.html` · `dist\_cruiseharness.html` · `dist\_moodstate.html` ·
+`dist\_uistate.html`
 
 它们不是手抄的，是 `_mk*.ps1` 从 `_app3d.html` **按标记切原文**再套一层桩，
 所以测的就是产品真正在跑的那段代码。
+
+七套实测（2026-10-01）：`58/58` · `34/34` · `39/39` · `450/450` · `85/85` ·
+`41/41` · `50/50`。
 
 ## 许可与来源
 

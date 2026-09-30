@@ -7,6 +7,10 @@ if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
 . (Join-Path $p '_paths.ps1')
 $dir = $ROOT
 Set-Location $dir
+# 收尾提示里要给用户一个「点哪里」的路径。那个目录名从 $DIR_OUT 相对 $ROOT 算出来，
+# 不写死 'dist' —— 写死的话，搬目录之后这句提示就指向一个不存在的文件夹，
+# 而它是收尾最显眼、被人照着做的那一行。
+$OUT_DIR_REL = $DIR_OUT.Substring($ROOT.Length + 1)
 $fail = 0
 function Step($name, $block){
   Write-Output ''
@@ -143,9 +147,10 @@ if ($fail -eq 0) {
   # 「从文件里数一遍」也只是一个看着像条数的数。真条数看页面标题 PASS n/m。
   Write-Output ''
   Write-Output '########## 全绿（harness 页面本身要人眼在浏览器里看一眼）##########'
-  Write-Output '  上面那份就是页面清点。真条数：浏览器打开 _*.html 看标题 PASS n/m。'
-  Write-Output '  （含 180 秒真实车流集成回归；每项浏览器里打开 _*.html 自查）'
-  Write-Output '  ⚠️ 以上是脚本能判的。画面本身只能靠真机打开 partridge-3d.html 看：'
+  # 这两行路径不许写死：产物在 dist\，而 dist 这个位置只由 _paths.ps1 知道。
+  Write-Output ("  上面那份就是页面清点。真条数：浏览器打开 " + $OUT_DIR_REL + "\_*.html 看标题 PASS n/m。")
+  Write-Output ("  （含 180 秒真实车流集成回归；每项浏览器里打开 " + $OUT_DIR_REL + "\_*.html 自查）")
+  Write-Output ("  ⚠️ 以上是脚本能判的。画面本身只能靠真机打开 " + $OUT_DIR_REL + "\parridge-3d.html 看：")
   Write-Output '     2026-09-30 就是「全绿 + 画面全黑」交出去的（frame() 缺 dt 声明）。'
 } else {
   Write-Output ("########## {0} 项失败 ##########" -f $fail)

@@ -19,24 +19,35 @@
 #     - 必须带 UTF-8 BOM（.ps1 通例，PowerShell 5.1 靠 BOM 认中文）
 #     - 只定义变量 + 末尾自检，不做别的
 #
-#  📌 分层改造进度：目前还是**平铺**布局（下面所有目录都指向 $ROOT）。
-#     等真正搬文件时，只改下面这一段的目录定义，其余行一个字都不用动。
+#  📌 分层改造进度：
+#     A 阶段（2026-10-01）已完成 —— 路径唯一出处，28 个脚本零处硬编码。
+#     C 阶段（同日）—— 产物落到 dist/，源留在根目录。
+#     B 阶段（待做）—— docs / assets / tools / checks / harnesses 物理分层。
+#     无论后面怎么搬，都只改上面「目录」那一段。
 $ErrorActionPreference = 'Stop'
 
-# ── 目录（平铺期：全部 = 根目录）──────────────────────────────
+# ── 目录（2026-10-01 起：源在根目录，产物在 dist/）─────────────
+#  搬目录的时候**只改这一段**，其余行一个字都不用动。
 $ROOT       = $PSScriptRoot
-$DIR_SRC    = $ROOT
-$DIR_ASSETS = $ROOT
-$DIR_BGM    = $ROOT
-$DIR_VENDOR = "$ROOT\_vendor"
-$DIR_TOOLS  = $ROOT
-$DIR_GEN    = $ROOT
-$DIR_CHECKS = $ROOT
-$DIR_SELF   = $ROOT
-$DIR_TPL    = $ROOT
-$DIR_OUT    = $ROOT
-$DIR_DIST   = $ROOT
+$DIR_SRC    = $ROOT              # _app3d.html
+$DIR_ASSETS = $ROOT              # 截图、README 配图
+$DIR_BGM    = $ROOT              # bgm-*.mp3（不可再生）
+$DIR_VENDOR = "$ROOT\_vendor"    # three149.min.js
+$DIR_TOOLS  = $ROOT              # _build / _deploy / _serve
+$DIR_GEN    = $ROOT              # _mk*.ps1
+$DIR_CHECKS = $ROOT              # 各类静态体检
+$DIR_SELF   = $ROOT              # 检查器的反查
+$DIR_TPL    = $ROOT              # _*.tpl.html
 $DIR_DOCS   = $ROOT
+$DIR_OUT    = "$ROOT\dist"       # 生成页（回归 harness、诊断页、实拍页）
+$DIR_DIST   = "$ROOT\dist"       # 构建产物 partridge-3d.html
+
+# dist/ 里**全部是生成的**，所以整目录进 .gitignore。
+# 在这里建（而不是让每个生成器各自建）的好处是：搬目录时它跟着走，
+# 而且任何一个脚本单独跑都不会因为「dist 不存在」而炸。
+if (-not (Test-Path -LiteralPath $DIR_OUT)) {
+  $null = New-Item -ItemType Directory -Path $DIR_OUT -Force
+}
 
 # ── 关键文件 ──────────────────────────────────────────────────
 $APP       = "$DIR_SRC\_app3d.html"                         # 唯一可编辑源

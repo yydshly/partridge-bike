@@ -5,7 +5,12 @@
 $p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
 if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
 . (Join-Path $p '_paths.ps1')
-if (-not $Dir) { $Dir = $ROOT }
+# ⚠️ 默认值是 $DIR_OUT（产物目录），**不是 $ROOT**。
+#    原来写的是 $ROOT —— 那时产物就在根目录，两者是同一个目录，所以看不出问题。
+#    2026-10-01 产物落到 dist\ 之后，这里没跟着改，七页立刻全部 MISSING。
+#    那个「页在不在」的判据当场抓住了它（这是它存在的意义），但根因是
+#    「默认目录」被写死成了某个恰好等于产物目录的地方。
+if (-not $Dir) { $Dir = $DIR_OUT }
 # 清点 harness 页面：该在的页在不在、里面还有没有断言。
 #
 # 为什么单独拆出来：这一段一旦写在 _checkall.ps1 里，就**验不到它自己** ——
