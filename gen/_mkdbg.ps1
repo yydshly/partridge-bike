@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-# 临时取景脚本：从**成品** parridge-3d.html 复制一份，把一段钩子插在启动调用之前。
+# 临时取景脚本：从**成品** partridge-3d.html 复制一份，把一段钩子插在启动调用之前。
 # 为什么不能直接看成品：后台标签页里 rAF 被冻结，截图永远停在首帧，
 # 而「切到雨/雪/雾」需要 applyMood()，它在主 IIFE 里、不是全局。
 # 所以只能把钩子插进 IIFE 内部，再同步跑一段天气粒子、render 一次、

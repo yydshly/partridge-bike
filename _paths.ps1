@@ -80,6 +80,7 @@ $S_SCOPE     = "$DIR_CHECKS\_scopecheck.ps1"
 $S_LINT      = "$DIR_CHECKS\_harnesslint.ps1"
 $S_PAGES     = "$DIR_CHECKS\_pages.ps1"
 $S_PATHCHECK = "$DIR_CHECKS\_pathcheck.ps1"
+$S_DOCCHECK  = "$DIR_CHECKS\_doccheck.ps1"
 
 # ── checks/self/：判「上面这些判据自己靠不靠谱」的那些 ─────────
 $S_SCOPETEST   = "$DIR_SELF\_scopetest.ps1"
@@ -89,6 +90,7 @@ $S_LINTTEST    = "$DIR_SELF\_linttest.ps1"
 $S_PAGESTEST   = "$DIR_SELF\_pagestest.ps1"
 $S_DRIVEWIRES  = "$DIR_SELF\_drivewires.ps1"
 $S_PATHTEST    = "$DIR_SELF\_pathtest.ps1"
+$S_DOCTEST     = "$DIR_SELF\_doctest.ps1"
 
 # ── gen/：生成器 ─────────────────────────────────────────────
 $S_MKDRIVE     = "$DIR_GEN\_mkdrive.ps1"
@@ -98,6 +100,7 @@ $S_MKMOOD      = "$DIR_GEN\_mkmood.ps1"
 $S_MKCRUISE    = "$DIR_GEN\_mkcruise.ps1"
 $S_MKMOODSTATE = "$DIR_GEN\_mkmoodstate.ps1"
 $S_MKUISTATE   = "$DIR_GEN\_mkuistate.ps1"
+$S_MKTOUCH     = "$DIR_GEN\_mktouch.ps1"
 $S_MKDIAG      = "$DIR_GEN\_mkdiag.ps1"
 $S_MKHARNESS   = "$DIR_GEN\_mkharness.ps1"
 $S_MKPAUSE     = "$DIR_GEN\_mkpause.ps1"
@@ -126,18 +129,20 @@ $OUT_MOOD      = "$DIR_OUT\_moodharness.html"
 $OUT_CRUISE    = "$DIR_OUT\_cruiseharness.html"
 $OUT_MOODSTATE = "$DIR_OUT\_moodstate.html"
 $OUT_UISTATE   = "$DIR_OUT\_uistate.html"
+$OUT_TOUCH     = "$DIR_OUT\_touchharness.html"
 $OUT_DIAG      = "$DIR_OUT\_cruisediag.html"      # _mkdiag 专用
 $OUT_DBG       = "$DIR_OUT\partridge-dbg.html"    # _mkdbg/_mkpause/_mkrec 专用
 
 # 页名（不含目录）—— _pages.ps1 清点、_pagestest.ps1 反查都用这个
 $OUT_NAMES = @(
   '_driveharness.html','_trafficharness.html','_routeharness.html',
-  '_moodharness.html','_cruiseharness.html','_moodstate.html','_uistate.html'
+  '_moodharness.html','_cruiseharness.html','_moodstate.html','_uistate.html',
+  '_touchharness.html'
 )
 
-# 每页的断言记号：常规 harness 记 ok()，_uistate 记 uok()。
+# 每页的断言记号：常规 harness 记 ok()，_uistate 和 _touchharness 记 uok()。
 # 不在表里的一律按 ok 处理 —— 新页默认就被清点，是安全的那一侧。
-$OUT_TOKENS = @{ '_uistate.html' = 'uok' }
+$OUT_TOKENS = @{ '_uistate.html' = 'uok'; '_touchharness.html' = 'ok' }
 
 # 反查（_pagestest.ps1）要动的三页。写在这儿而不是测试脚本里，是因为
 # 「哪几页适合当反查靶子」是关于**这套页**的知识 ——
@@ -167,10 +172,11 @@ if ($outProbeGone.Count -gt 0) {
 $mustExist = @(
   $APP, $BGM_META, $THREE_LIB, $README, $AGENTS, $SCREENSHOT, $GITIGNORE, $GITATTRS,
   $S_BUILD, $S_DEPLOY, $S_SERVE, $S_SWAP, $S_REFRACTOR,
-  $S_CHECKALL, $S_SYNTAX, $S_FREEVAR, $S_SCOPE, $S_LINT, $S_PAGES, $S_PATHCHECK,
+  $S_CHECKALL, $S_SYNTAX, $S_FREEVAR, $S_SCOPE, $S_LINT, $S_PAGES, $S_PATHCHECK, $S_DOCCHECK,
   $S_SCOPETEST, $S_SYNTEST, $S_FREEVARTEST, $S_LINTTEST, $S_PAGESTEST, $S_DRIVEWIRES, $S_PATHTEST,
+  $S_DOCTEST,
   $S_MKDRIVE, $S_MKTRAFFIC, $S_MKROUTE, $S_MKMOOD, $S_MKCRUISE, $S_MKMOODSTATE,
-  $S_MKUISTATE, $S_MKDIAG, $S_MKHARNESS, $S_MKPAUSE, $S_MKREC, $S_MKDBG,
+  $S_MKUISTATE, $S_MKDIAG, $S_MKHARNESS, $S_MKPAUSE, $S_MKREC, $S_MKDBG, $S_MKTOUCH,
   $TPL_DRIVE, $TPL_TRAFFIC, $TPL_ROUTE, $TPL_MOOD, $TPL_CRUISE, $TPL_MOODSTATE,
   $TPL_CRUISEDIAG, $TPL_MUSIC, $TPL_BGM2
 )

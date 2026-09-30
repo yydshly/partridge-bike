@@ -65,7 +65,7 @@ foreach ($f in $scripts) {
     # ② 基准目录是「仓库根的别名」+ 第二个参数不是字面量。
     #    ⚠️ 这里**故意只认 $dir / $d，不认 $root**：
     #    tools\_serve.ps1 里的 `$root = $ROOT` 是**网页服务的 doc root**，
-    #    它拼的是 URL 路径（`/dist/parridge-3d.html`），不是仓库里的文件路径，
+    #    它拼的是 URL 路径（`/dist/partridge-3d.html`），不是仓库里的文件路径，
     #    判它等于把判据变成噪音。而 `$root` 作**变量**在全仓库只出现在
     #    _serve.ps1 那三行，别处全是 `$ROOT`（那个规范变量）或字符串里的探针文本。
     foreach ($jm in [regex]::Matches($line, 'Join-Path\s+\$(dir|d)\s+([^\s''")]+)')) {

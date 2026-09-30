@@ -9,11 +9,12 @@
 
 **https://yydshly.github.io/partridge-bike/**
 
-手机上直接开。**要点一下画面才会动**——浏览器要求先有真实手势，
-否则不放声音也不起步。拖速度滑杆给油，按 `A`/`D` 打方向。
+手机上也能开。**要点一下画面才会动**——浏览器要求先有真实手势，
+否则不放声音也不起步。手机上面板会自动改成窄屏排版，24 个按钮每个都 ≥42px 高；
+手势是**拖**（环绕）、**捏合**（缩放）、**双指拖**（平移）。
 
-> ⚠️ **窄屏还没适配**：整个项目一条 `@media` 都没有。手机上画面能跟着缩放，
-> 但底下那 24 个按钮会挤在一起。桌面浏览器才是完整体验。
+> ⚠️ 键盘快捷键在手机上不存在：`A`/`D`/`W`/`S`/`N`/`B`/`空格` 都要有物理键盘。
+> 手机上用面板上的按钮和滑杆。
 
 > 线上这份是从 `gh-pages` 分支发布的，它就是 `tools\_build.ps1` 的产物，一个字节都没改。
 > `main` 分支里**没有**这个 11.7 MB 的文件，原因见下。
@@ -21,7 +22,7 @@
 ## 或者本地跑
 
 克隆下来**直接双击是打不开的**。这个仓库只存源，11.7 MB 的
-`parridge-3d.html` 是构建产物，不在版本库里。
+`partridge-3d.html` 是构建产物，不在版本库里。
 
 ```powershell
 git clone https://github.com/yydshly/partridge-bike.git
@@ -30,7 +31,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\_build.ps1
 ```
 
 看到 `built partridge-3d.html  11,732,169 bytes` 就成了，
-之后**双击 `dist\parridge-3d.html`** 即可运行（`file://` 直开，不需要起服务）。
+之后**双击 `dist\partridge-3d.html`** 即可运行（`file://` 直开，不需要起服务）。
 
 **为什么不把成品提交进 `main`**：它是 252 KB 的 `src\_app3d.html` 拼出来的，
 改一行源码就产生一个 11.7 MB 的新 blob。几轮改动后 `.git` 就会膨胀到
@@ -101,16 +102,16 @@ partridge-bike\
 | `assets/bgm/*.mp3` | 配乐源文件（8.2 MB，AI 生成，不可再生） |
 | `assets/vendor/three149.min.js` | three.js r149，构建时内联 |
 | `_paths.ps1` | **全仓库路径的唯一出处**（下面每一个路径都从它来） |
-| `tools/_build.ps1` | 把上面三样拼成 `dist\parridge-3d.html` |
-| `checks/_checkall.ps1` | **一条命令跑完全部验证**（17 步） |
+| `tools/_build.ps1` | 把上面三样拼成 `dist\partridge-3d.html` |
+| `checks/_checkall.ps1` | **一条命令跑完全部验证**（20 步） |
 | `templates/_*.tpl.html`（9 个） | 回归页模板，套桩用 |
-| `gen/_mk*.ps1`（12 个） | 生成器：从源文件**切代码段**造回归页 |
-| `checks/` | 五个静态判据 + `_pages` 清点 + `_pathcheck` 路径收口 |
-| `checks/self/`（6 个） | 「判据自己靠不靠谱」的反查 |
+| `gen/_mk*.ps1`（13 个） | 生成器：从源文件**切代码段**造回归页 |
+| `checks/` | 五个静态判据 + `_pages` 清点 + `_pathcheck` 路径收口 + `_doccheck` 文档防漂移 |
+| `checks/self/`（7 个） | 「判据自己靠不靠谱」的反查 |
 | `tools/` | `_build` `_deploy` `_serve` `_swap` `_refactor` |
-| `dist/` | 全部产物：成品 + 7 个回归页 + 诊断页/实拍页（整目录 gitignore） |
+| `dist/` | 全部产物：成品 + 8 个回归页 + 诊断页/实拍页（整目录 gitignore） |
 | `AGENTS.md` | 项目记忆与方法论（踩过的坑都在里面） |
-| `.gitignore` | 排除 `dist\`（= 9 个产物：1 成品 + 1 探针 + 7 回归页） |
+| `.gitignore` | 排除 `dist\`（= 11 个产物：1 成品 + 1 探针 + 8 回归页 + 1 诊断页） |
 
 **路径只有一处出处。** 32 个脚本开头都是这三行，从 `$PSScriptRoot` 往上找 `_paths.ps1`——
 
@@ -134,26 +135,36 @@ if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
 powershell -NoProfile -ExecutionPolicy Bypass -File .\checks\_checkall.ps1
 ```
 
-17 步：构建 → 语法（源码 + 成品）→ 自由变量/作用域 ×2 → 重新生成六个回归页
-→ 面板状态探针 → 作用域体检 → 交付自检 → 五套检查器的自检。
+20 步：构建 → 语法（源码 + 成品）→ 自由变量/作用域 ×2 → 面板状态探针
+→ 窄屏 + 触屏手势 → 重新生成七个回归页 → 作用域体检 → 交付自检
+→ 两套检查器的自检 → 路径收口 → 音频完整性 → 页面清点 → **文档防漂移**。
 
 **它只证明「能生成、能通过静态检查」，证明不了画面。** 画面只能靠真机打开
-`dist\parridge-3d.html` 看一眼——2026-09-30 就交过一版**所有检查全绿、画面全黑**
+`dist\partridge-3d.html` 看一眼——2026-09-30 就交过一版**所有检查全绿、画面全黑**
 的成品（`frame()` 里用了没声明的 `dt`，每帧抛 `ReferenceError`）。
 所以**冒烟测试是交付流程的一部分，不是可选项**。
 
-七套回归页在 `dist\`，是浏览器页面，脚本生成不了结论，要人眼各开一次
+**文档也会漂，而且没有任何脚本会读它**——B 阶段把 47 个文件搬进 8 个目录之后，
+`AGENTS.md` 最顶上那节「构建」一个字都没跟着搬，里面两条命令照抄就报错。
+第 20 步的 `_doccheck.ps1` 就是为这件事存在的：它查文档里每条 `-File` 命令的
+路径是否真实存在、声明的总步数是否等于 `_checkall` 实际步数、点名的产物名
+`_paths.ps1` 是否认得。它自己第一版有个**永远不会红的判据**（正则漏了捕获组），
+所以配了 `checks\self\_doctest.ps1` 四条反查。
+
+八套回归页在 `dist\`，是浏览器页面，脚本生成不了结论，要人眼各开一次
 （标题会变成 `PASS n/m`，那个才是这次的真实条数）：
 
 `dist\_driveharness.html` · `dist\_trafficharness.html` · `dist\_routeharness.html` ·
 `dist\_moodharness.html` · `dist\_cruiseharness.html` · `dist\_moodstate.html` ·
-`dist\_uistate.html`
+`dist\_uistate.html` · `dist\_touchharness.html`
 
 它们不是手抄的，是 `gen\_mk*.ps1` 从 `src\_app3d.html` **按标记切原文**再套一层桩，
-所以测的就是产品真正在跑的那段代码。
+所以测的就是产品真正在跑的那段代码。`_touchharness` 特殊一点：它量的是
+**布局**，办法是把成品里那一段 `<style>` 和 `#wrap` 的真实 DOM 搬进
+390 / 360 / 320 / 852 四个视口的 iframe 里量真实矩形——不靠看图。
 
-七套实测（2026-10-01）：`58/58` · `34/34` · `39/39` · `450/450` · `85/85` ·
-`41/41` · `50/50`。
+八套实测（2026-10-01）：`58/58` · `34/34` · `39/39` · `450/450` · `85/85` ·
+`41/41` · `50/50` · `52/52`。
 
 ## 许可与来源
 

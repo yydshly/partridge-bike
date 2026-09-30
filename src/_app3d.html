@@ -105,6 +105,59 @@
       padding:1px 6px; font:600 11px/1.6 ui-monospace,Consolas,monospace; color:#b9c6d6}
   #err{display:none; margin:10px auto 0; width:min(1280px,100%); padding:10px 14px;
        border:1px solid #7f2b2b; background:#2a1414; border-radius:10px; color:#ffb4b4; font-size:13px}
+
+  /* ══════════════ 窄屏 / 触屏适配 ══════════════
+     在这之前整个项目一条 @media 都没有：手机上那 24 个按钮照桌面排版挤成一团，
+     而且提示语写的是鼠标（🖱 拖拽 / 滚轮 / 右键），触屏上这三样有两样根本不存在。
+     「窄」和「矮」分开处理 —— 手机横屏是 852×390 又宽又矮，只卡 max-width 会整个漏掉。 */
+  .h-mob{display:none}
+
+  @media (max-width:820px){
+    body{padding:8px}
+    /* 去掉 (100vh - 236px) 那个桌面假设：236 是桌面面板的实测高度，
+       手机上真实面板高得多，照抄会把舞台挤成一条线。窄屏改成整幅宽 + 页面滚动。 */
+    .stage{width:100%}
+    /* HUD 拉成整条横幅，提示条放到它**下面**，各自占满宽度。
+       原来是 HUD 右上、提示条左上，两者在中间抢地方 —— 我第一版用
+       max-width:calc(100% - 150px) 给 HUD 预留位置，可那个 150 是拍脑袋的：
+       390px 屏刚好不撞，360 和 320 就压上了（实测 -6px）。
+       改成上下分层之后，不管文案多长、屏幕多窄，都不可能重叠。 */
+    .hud{left:8px; right:8px; top:8px; justify-content:space-between; padding:6px 10px}
+    .hud .it{min-width:0}
+    .hud .v{font-size:15px}
+    .h-desk{display:none}
+    .h-mob{display:inline}
+    .hint{left:8px; right:8px; top:57px; max-width:none; white-space:normal;
+          font-size:11.5px; padding:6px 11px; line-height:1.45}
+    .cap{bottom:10px; max-width:92%; font-size:13px; padding:6px 13px}
+    .lyric{bottom:48px; padding:0 6%; font-size:14px}
+    .panel{padding:10px; gap:8px 10px}
+    /* 这一条是「挤在一起」的病根：.grp 原来是 nowrap 的一行，
+       镜头那 6 个按钮一行放不下就整个撑出面板。 */
+    .grp{flex:1 1 auto; min-width:0; flex-wrap:wrap; gap:8px}
+    .grp > label{flex:1 0 100%; letter-spacing:.04em}
+    .spacer{display:none}
+    .tip{display:none}                 /* 全是键盘键位，手机上没意义，也最容易撑破 */
+    button{min-height:42px; min-width:44px; padding:9px 14px}   /* 触控目标从 ~30px 提到 42/44px */
+    button.icon{min-width:46px; font-size:17px}
+    /* 滑杆：把可点区域从 4px 撑到 24px，视觉上仍然只画中间那条 4px 的线 */
+    input[type=range]{flex:1 1 110px; min-width:110px; width:auto; height:24px;
+      background:linear-gradient(90deg,var(--accent2),var(--accent)) center/100% 4px no-repeat}
+    input[type=range]::-webkit-slider-thumb{width:24px; height:24px; border-width:4px}
+    input[type=range]::-moz-range-thumb{width:24px; height:24px; border-width:4px}
+  }
+
+  /* 矮屏（手机横屏 / 被压扁的桌面窗口）：舞台必须让出高度，
+     否则 16:9 的宽度一算出来就把面板顶到屏幕外去了。
+     ⚠️ 触控尺寸也必须在这里再写一遍：手机横屏是 852×390，宽度 852 > 820，
+        压根进不了上面那段 max-width，只写一份的话横屏按钮还是 31px 高。 */
+  @media (max-height:560px){
+    body{padding:6px}
+    .stage{width:min(100%, calc((100vh - 108px) * 16 / 9))}
+    .panel{padding:8px 10px; gap:6px 10px}
+    .hint{display:none}                /* 横着本来就窄，提示条会和 HUD 抢地方 */
+    button{min-height:42px; min-width:44px}
+  }
 </style>
 </head>
 <body>
@@ -117,7 +170,7 @@
       <div class="it"><span class="k">DIST</span><span class="v" id="hDist">0.00<small>km</small></span></div>
       <div class="it lean"><span class="k">LEAN</span><span class="bar"><i id="hLean"></i></span></div>
     </div>
-    <div class="hint" id="hint">🖱 <b>拖拽</b> 环绕 · <b>滚轮</b> 缩放 · <b>右键</b> 平移</div>
+    <div class="hint" id="hint"><span class="h-desk">🖱 <b>拖拽</b> 环绕 · <b>滚轮</b> 缩放 · <b>右键</b> 平移</span><span class="h-mob">👆 <b>拖</b>环绕 · <b>捏合</b>缩放 · <b>双指</b>平移</span></div>
     <div class="lyric" id="lyric"></div>
     <div class="cap" id="cap">鹧鸪：今天也是<strong>慢慢骑</strong>的一天</div>
   </div>
@@ -3487,28 +3540,77 @@ const CAM = {
 };
 const polarOK = p => Math.min(1.50, Math.max(0.12, p));
 
+/* 触屏手势。
+   在这之前相机只有两件事：「一根指针拖 = 环绕」和「滚轮 = 缩放」。可触屏上：
+     e.button 恒为 0   → 「右键平移」那条分支永远进不去；
+     没有 wheel 事件   → 根本没有缩放；
+     没有任何 pinch     → 双指什么也干不了。
+   也就是说提示语里那三样，手机上一样都不成立。这里补上双指捏合缩放 + 双指平移，
+   并且保证「屏幕上只有一根指针时，行为与原来逐字节一致」，桌面端零回归。 */
+const PTR = new Map();     // pointerId -> {x,y}
+let pinch = null;          // 两指当前的间距和中点
+function ptrJoin(e){
+  PTR.set(e.pointerId, { x:e.clientX, y:e.clientY });
+  if (PTR.size >= 2){
+    const v = [...PTR.values()];
+    pinch = { d: Math.hypot(v[0].x-v[1].x, v[0].y-v[1].y) || 1,
+              x:(v[0].x+v[1].x)/2, y:(v[0].y+v[1].y)/2 };
+  } else {
+    pinch = null;
+    CAM.panning = (e.button === 2 || e.shiftKey);
+    CAM.lastX = e.clientX; CAM.lastY = e.clientY;
+  }
+}
+function camPan(dx, dy){
+  const s = CAM.dist * 0.0016;
+  CAM.target.addScaledVector(V(Math.cos(CAM.az), 0, -Math.sin(CAM.az)), -dx*s);
+  CAM.target.y = Math.min(2.4, Math.max(0.10, CAM.target.y + dy*s));
+}
 cv.addEventListener('pointerdown', e => {
-  CAM.dragging = true; CAM.panning = (e.button === 2 || e.shiftKey);
-  CAM.lastX = e.clientX; CAM.lastY = e.clientY; CAM.idle = 0;
+  CAM.dragging = true;
   cv.classList.add('dragging');
   try { cv.setPointerCapture(e.pointerId); } catch(_){}
+  ptrJoin(e);
+  CAM.idle = 0;
 });
 cv.addEventListener('pointermove', e => {
-  if (!CAM.dragging) return;
-  const dx = e.clientX - CAM.lastX, dy = e.clientY - CAM.lastY;
-  CAM.lastX = e.clientX; CAM.lastY = e.clientY; CAM.idle = 0;
-  if (CAM.panning){
-    const s = CAM.dist * 0.0016;
-    CAM.target.addScaledVector(V(Math.cos(CAM.az), 0, -Math.sin(CAM.az)), -dx*s);
-    CAM.target.y = Math.min(2.4, Math.max(0.10, CAM.target.y + dy*s));
+  if (!CAM.dragging || !PTR.has(e.pointerId)) return;
+  if (PTR.size >= 2){
+    const prev = pinch;
+    PTR.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    const v = [...PTR.values()];
+    const d = Math.hypot(v[0].x-v[1].x, v[0].y-v[1].y) || 1;
+    const mx = (v[0].x+v[1].x)/2, my = (v[0].y+v[1].y)/2;
+    if (prev){
+      CAM.distT = Math.min(16, Math.max(1.0, CAM.distT * (prev.d / d)));   // 张开 = 拉近
+      camPan(mx - prev.x, my - prev.y);                                   // 中点位移 = 平移
+    }
+    pinch = { d, x:mx, y:my };
   } else {
-    CAM.azT  -= dx * 0.0072;
-    CAM.polT  = polarOK(CAM.polT - dy * 0.0060);
+    const dx = e.clientX - CAM.lastX, dy = e.clientY - CAM.lastY;
+    CAM.lastX = e.clientX; CAM.lastY = e.clientY;
+    if (CAM.panning) camPan(dx, dy);
+    else {
+      CAM.azT  -= dx * 0.0072;
+      CAM.polT  = polarOK(CAM.polT - dy * 0.0060);
+    }
   }
+  CAM.idle = 0;
   camPresetOff();
 });
 function endDrag(e){
-  CAM.dragging = false; cv.classList.remove('dragging');
+  PTR.delete(e.pointerId);
+  if (PTR.size < 2) pinch = null;
+  if (PTR.size === 1){
+    /* 两指回到一指：必须重新播种。否则下一帧的 dx 是「从抬手前的位置到手指当前位置」
+       的一大跳，镜头会猛地甩一下 —— 这是双指手势最常见的坑。 */
+    const rest = [...PTR.values()][0];
+    CAM.lastX = rest.x; CAM.lastY = rest.y; CAM.panning = false;
+  }
+  if (PTR.size === 0){
+    CAM.dragging = false; CAM.panning = false;
+    cv.classList.remove('dragging');
+  }
   try { cv.releasePointerCapture(e.pointerId); } catch(_){}
 }
 cv.addEventListener('pointerup', endDrag);

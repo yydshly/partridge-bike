@@ -26,23 +26,32 @@ function Step($name, $block){
 #    再拼一次，路径就又有了第二个出处 —— 那正是 A 阶段要消掉的东西。
 $ps = { param($f, $Path) if ($Path) { powershell -NoProfile -ExecutionPolicy Bypass -File $f -Path $Path } else { powershell -NoProfile -ExecutionPolicy Bypass -File $f } }
 
-Step '1/18 构建'            { & $ps $S_BUILD }
-Step '2/18 源码语法（注释/字符串配平）' { & $ps $S_SYNTAX -Path $APP }
-Step '3/18 成品语法（注释/字符串配平）' { & $ps $S_SYNTAX -Path $PRODUCT }
+Step '1/20 构建'            { & $ps $S_BUILD }
+Step '2/20 源码语法（注释/字符串配平）' { & $ps $S_SYNTAX -Path $APP }
+Step '3/20 成品语法（注释/字符串配平）' { & $ps $S_SYNTAX -Path $PRODUCT }
 # ⚠️ 这两步不是「保险」，是 2026-09-30 真抓到一个把整个 app 打死的东西：
 #    frame() 里 `S.tSec += dt` 的 dt 全文件没声明过，每帧抛 ReferenceError、
 #    画面全黑，而当时语法检查、作用域体检、六套 harness、交付自检**全绿**。
-Step '4/18 源码自由变量（作用域链）'  { & $ps $S_FREEVAR -Path $APP }
-Step '5/18 成品自由变量（作用域链）'  { & $ps $S_FREEVAR -Path $PRODUCT }
-Step '6/18 面板初始状态（生成注入探针）' { & $ps $S_MKUISTATE }
-Step '7/18 驾驶回归（生成）'  { & $ps $S_MKDRIVE }
-Step '8/18 车流+碰撞（生成）' { & $ps $S_MKTRAFFIC }
-Step '9/18 路段结构（生成）'   { & $ps $S_MKROUTE }
-Step '10/18 时段×天气（生成）'  { & $ps $S_MKMOOD }
-Step '11/18 自动巡航（生成）'   { & $ps $S_MKCRUISE }
-Step '12/18 鹧鸪状态机（生成）' { & $ps $S_MKMOODSTATE }
-Step '13/18 作用域体检'       { & $ps $S_SCOPE }
-Step '14/18 交付自检' {
+Step '4/20 源码自由变量（作用域链）'  { & $ps $S_FREEVAR -Path $APP }
+Step '5/20 成品自由变量（作用域链）'  { & $ps $S_FREEVAR -Path $PRODUCT }
+Step '6/20 面板初始状态（生成注入探针）' { & $ps $S_MKUISTATE }
+# 窄屏 / 触屏。放在面板那一步后面，因为它量的也是「用户看得见的那层」，
+# 而且它抓的两类问题都是**没有对应数值回归**的：
+#   · 触屏手势：以前手机上根本没有缩放（e.button 恒为 0 → 右键平移进不去；
+#     也没有 wheel、也没有 pinch），而提示语却写着「滚轮 缩放」——
+#     也就是说那句提示在手机上从头到尾是假的。
+#   · 窄屏布局：以前整个项目一条 @media 都没有，24 个按钮照桌面排版挤成一团。
+# 布局不是靠看图量的，是把**成品里那段 <style> 和 #wrap 的真实 DOM** 搬进
+# 390/360/320/852 四个视口的 iframe 里量真实矩形。
+Step '7/20 窄屏 + 触屏手势（生成注入探针）' { & $ps $S_MKTOUCH }
+Step '8/20 驾驶回归（生成）'  { & $ps $S_MKDRIVE }
+Step '9/20 车流+碰撞（生成）' { & $ps $S_MKTRAFFIC }
+Step '10/20 路段结构（生成）'   { & $ps $S_MKROUTE }
+Step '11/20 时段×天气（生成）'  { & $ps $S_MKMOOD }
+Step '12/20 自动巡航（生成）'   { & $ps $S_MKCRUISE }
+Step '13/20 鹧鸪状态机（生成）' { & $ps $S_MKMOODSTATE }
+Step '14/20 作用域体检'       { & $ps $S_SCOPE }
+Step '15/20 交付自检' {
   $t = [IO.File]::ReadAllText(($PRODUCT))
   $src = Get-Item ($APP)
   $out = Get-Item ($PRODUCT)
@@ -121,14 +130,15 @@ Step '14/18 交付自检' {
   Write-Output ("  源 {0:N0} / 成品 {1:N0} bytes" -f $src.Length, $out.Length)
   $script:fail += $bad
 }
-Step '15/18 作用域检查器自检（喂它一份已知坏样本）' { & $ps $S_SCOPETEST }
-Step '16/18 语法/自由变量/悬空调用/路径 检查器自检' {
+Step '16/20 作用域检查器自检（喂它一份已知坏样本）' { & $ps $S_SCOPETEST }
+Step '17/20 语法/自由变量/悬空调用/路径/文档 检查器自检' {
   & $ps $S_SYNTEST
   & $ps $S_FREEVARTEST
   & $ps $S_LINTTEST
   & $ps $S_PAGESTEST
   & $ps $S_DRIVEWIRES
   & $ps $S_PATHTEST
+  & $ps $S_DOCTEST
 }
 
 # ⚠️ 这一步以前**不存在**，而 A 阶段做的正是同一件事 —— 但它当时只活在
@@ -141,7 +151,7 @@ Step '16/18 语法/自由变量/悬空调用/路径 检查器自检' {
 #         静态判据 ① 看不见这种，可它照样会在文件一搬走时断掉；
 #      ③ 已跟踪的源文件有没有被 .gitignore 悄悄踢出版本库 ——
 #         光看 git status 看不出来，被忽略的文件根本没进索引。
-Step '17/18 路径收口（不变量常驻）' { & $ps $S_PATHCHECK }
+Step '18/20 路径收口（不变量常驻）' { & $ps $S_PATHCHECK }
 
 # ⚠️ gen\_mkharness.ps1 **以前从来没被 _checkall 跑过**，而它验的恰恰是
 #    用户唯一能直接听出来的东西：8 首 mp3 的 base64 和盘上文件**逐字节**一致。
@@ -154,7 +164,22 @@ Step '17/18 路径收口（不变量常驻）' { & $ps $S_PATHCHECK }
 #    于是这行把**路径变量 `$APP`** 改成了源文件正文，脚本从第 36 行起全崩。
 #    而没人跑它，所以没人知道。已改名 + 已挂进这一步。
 #    规律：**没被任何编排器调用的脚本，等于没有检查**，无论它写得多认真。
-Step '18/18 音频完整性（base64 逐字节对盘 + 歌词数）' { & $ps $S_MKHARNESS }
+Step '19/20 音频完整性（base64 逐字节对盘 + 歌词数）' { & $ps $S_MKHARNESS }
+
+# ⚠️ 文档也是产物，而且**以前完全没人读它**。
+#    B 阶段把 47 个文件搬进 8 个目录之后，AGENTS.md 最顶上那节「构建」——
+#    每个 agent 开工先读的那一节——一个字都没跟着搬：
+#      `powershell -File .\_build.ps1` 和 `-File .\_checkall.ps1` 照抄就报错；
+#      步数写着 16（当时已经 18）；源码大小写着 ~100 KB（实际 252 KB）。
+#    更离谱的是它当场又抓出一个从没被发现过的错：README、AGENTS.md、
+#    连**本文件的收尾提示**都把产物名写成了 `parridge-3d.html`（少一个 t），
+#    于是「双击 dist\那 个文件」指向一个不存在的文件。
+#    没有任何检查会读文档，所以它能一路静默地漂完一整个阶段。
+#
+#    它自己第一版的 ① 号判据**永远不会红**（正则漏了捕获组），
+#    是 checks\self\_doctest.ps1 的第 1 条反查抓出来的 —— 那条反查
+#    此刻在第 17 步里跑。
+Step '20/20 文档防漂移（命令路径 / 步数 / 产物名）' { & $ps $S_DOCCHECK }
 
 Write-Output ''
 # 页面清点放在最前面：缺页 / 一条断言都没有，本身就该算失败。
@@ -176,7 +201,7 @@ if ($fail -eq 0) {
   # 这两行路径不许写死：产物在 dist\，而 dist 这个位置只由 _paths.ps1 知道。
   Write-Output ("  上面那份就是页面清点。真条数：浏览器打开 " + $OUT_DIR_REL + "\_*.html 看标题 PASS n/m。")
   Write-Output ("  （含 180 秒真实车流集成回归；每项浏览器里打开 " + $OUT_DIR_REL + "\_*.html 自查）")
-  Write-Output ("  ⚠️ 以上是脚本能判的。画面本身只能靠真机打开 " + $OUT_DIR_REL + "\parridge-3d.html 看：")
+  Write-Output ("  ⚠️ 以上是脚本能判的。画面本身只能靠真机打开 " + $OUT_DIR_REL + "\" + [IO.Path]::GetFileName($PRODUCT) + " 看：")
   Write-Output '     2026-09-30 就是「全绿 + 画面全黑」交出去的（frame() 缺 dt 声明）。'
 } else {
   Write-Output ("########## {0} 项失败 ##########" -f $fail)
