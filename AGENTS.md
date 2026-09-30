@@ -1509,3 +1509,87 @@ B 阶段把脚本搬进 `checks\` 之后更是直接失效。已改用 `$S_SCOPE
 - `dist\parridge-3d.html` SHA256 `827DE725…`，与线上已验那份逐字节一致
 - `_app3d.html` / `_bgm-meta.json` 未被改动
 - 三个提交已推上 `main`：`3616303`(A) · `cce4129`(AGENTS-A) · `af81e88`(C)
+
+---
+
+## 2026-10-01 B 阶段：物理分层 + 把「一次性观察」升级成「常驻判据」
+
+### 搬完之后
+
+```
+partridge-bike\
+  _paths.ps1        ← 路径唯一出处
+  README.md  AGENTS.md  .gitignore  .gitattributes
+  src\        唯一可编辑源 _app3d.html + _bgm-meta.json
+  assets\bgm\ 8 首 MP3        assets\vendor\ three149.min.js
+  docs\       截图
+  templates\  9 个回归页模板
+  gen\        12 个生成器
+  tools\      _build _deploy _serve _swap _refactor
+  checks\     _checkall + 五个静态判据 + _pages + _pathcheck
+    self\     六个「判据自己靠不靠谱」的反查
+  dist\       全部产物
+```
+
+根目录 47 个文件 → **5 个文件 + 8 个目录**。
+**50 个 rename，0 个字节改动**（mp3 / 源 / three.js / 模板 / 截图逐个对过 blob 哈希）。
+
+### 最重要的一条：一次性观察 ≠ 检查
+
+A 阶段的覆盖率闸门当时**只活在 `tools\_refactor.ps1` 里** ——
+那是一次性迁移工具，跑完就退休了。而「零处硬编码」这个不变量
+会在**以后每一次**改动里被破坏：有人新写一个脚本，里面
+`Join-Path $dir '_app3d.html'`，没有任何东西会响。
+**只在迁移时验过一次的，不叫检查，叫一次性观察。**
+
+所以新增 `checks\_pathcheck.ps1` 挂进 `_checkall` 第 17 步，
+配套 `checks\self\_pathtest.ps1` 做反查（第 16 步验它）。它查三件事：
+
+1. 引号里的文件名凡是 `_paths.ps1` 认得的，都该走变量
+2. `Join-Path <根目录别名> <非字面量>` —— 静态判据 ① 看不见这种
+3. **已跟踪的源文件有没有被 `.gitignore` 悄悄踢出版本库**
+
+第 3 条是搬文件 / 改整目录 ignore 之后唯一的兜底。光看 `git status`
+看不出来 —— 被忽略的文件根本没进索引，也就没什么「要删的」。
+
+### 判据自己也有盲区，都是当场抓出来的
+
+- **① 第一版只认 `'名字.ext'` 这种光秃秃的叶子名**，
+  于是 `'_vendor\three149.min.js'` 这种带目录前缀的字面量
+  从它眼皮底下过去了（`_build.ps1` 就在那儿）。
+  → 改成「任意前缀 + 叶子名」。
+- **② 路径可以来自**数据**而不是字面量**：`_build.ps1` 的
+  `Join-Path $dir $t.f`（`$t.f` 来自 `_bgm-meta.json`）。
+  **加 mp3 时它一个字都不改**，静态判据永远查不到，
+  可它照样会在文件一搬走时断掉。
+  → 专门的第二道判据 + 专门的反查用例。
+- **反查脚本 `_pathtest.ps1` 自己故意包含它要测的写法**，
+  所以注入片段必须在**运行时**拼出来（文件名从 `$APP` 推叶子，
+  基准目录变量名拆成 `'$' + 'dir'`）。
+  一份能测出别人问题的检查，不该自己先犯规 ——
+  判据扫的是**全部**脚本，它自己也在射程内。
+- **判据 ② 故意不认 `$root`**：`tools\_serve.ps1` 里的 `$root`
+  是网页服务的 doc root，拼的是 URL 路径不是仓库文件路径。
+  而 `$root` 作**变量**在全仓库只出现在 `_serve.ps1` 那三行，
+  别处都是 `$ROOT`（那个规范变量）。
+
+### 自己的两个操作失误
+
+- 搬运用 `Get-ChildItem -Filter '*.html'` 排除掉 `_app3d.html` 之后
+  整体搬 —— 把 9 个 `_*.tpl.html` 模板也搬进了 `dist\`（C 阶段已犯过一次）。
+  这次改成**逐文件显式映射表**，并加一道前置护栏：
+  映射表里有源文件不存在就**整批中止**。
+  第一次跑时它就因为 `three149.min.js` 其实在 `_vendor\` 里而中止，
+  一个文件都没搬 —— 这正是护栏该有的样子。
+- 用 `write` 工具新建的两个 `.ps1` 是**无 BOM** 的，
+  PowerShell 5.1 按 ANSI 解码成乱码、直接 ParserError。
+  → 补 BOM。**本项目里凡是新写的 `.ps1`，BOM 不是可选项。**
+
+### 验证
+
+- `_checkall` **17/17 全绿**，exit 0
+- pathcheck 反查 3/3（含新加的「路径来自数据」用例）
+- 浏览器实测 `dist\_cruiseharness.html` → `PASS 85/85`
+- `dist\parridge-3d.html` SHA256 `827DE725…`，与线上已验那份逐字节一致
+- 0 个已跟踪文件被 gitignore 忽略（57 个已跟踪文件全部安全）
+- 提交 `bd61aad`（50 renames）已推上 `main`
