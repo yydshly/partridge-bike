@@ -2,12 +2,20 @@
 
 ![鹧鸪骑单车](screenshot.jpg)
 
-一只鹧鸪骑车。Three.js 单文件动画，**11.7 MB，双击就能跑**——
+一只鹧鸪骑车。Three.js 单文件动画，**11.7 MB，一个 HTML 文件就是全部**——
 不需要联网、不需要装任何东西、不需要起服务器。
 
----
+## ▶ 在线玩
 
-## ⚠️ 先构建：仓库里没有成品
+**https://yydshly.github.io/partridge-bike/**
+
+手机上直接开。**要点一下画面才会动**——浏览器要求先有真实手势，
+否则不放声音也不起步。拖速度滑杆给油，按 `A`/`D` 打方向。
+
+> 线上这份是从 `gh-pages` 分支发布的，它就是 `_build.ps1` 的产物，一个字节都没改。
+> `main` 分支里**没有**这个 11.7 MB 的文件，原因见下。
+
+## 或者本地跑
 
 克隆下来**直接双击是打不开的**。这个仓库只存源，11.7 MB 的
 `partridge-3d.html` 是构建产物，不在版本库里。
@@ -21,10 +29,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\_build.ps1
 看到 `built partridge-3d.html  11,732,169 bytes` 就成了，
 之后**双击 `partridge-3d.html`** 即可运行（`file://` 直开，不需要起服务）。
 
-**为什么不把成品提交进来**：它是 252 KB 的 `_app3d.html` 拼出来的，
+**为什么不把成品提交进 `main`**：它是 252 KB 的 `_app3d.html` 拼出来的，
 改一行源码就产生一个 11.7 MB 的新 blob。几轮改动后 `.git` 就会膨胀到
-几百 MB，而换不回任何信息——那些内容都能重建。`_build.ps1` 需要三样东西，
-全都在仓库里：`_app3d.html`、`bgm-1..8.mp3`、`_vendor/three149.min.js`。
+几百 MB，而换不回任何信息——那些内容都能重建。要部署就用 `gh-pages` 分支。
+`_build.ps1` 需要三样东西，全都在仓库里：`_app3d.html`、`bgm-1..8.mp3`、
+`_vendor/three149.min.js`。
 
 ## 怎么玩
 
