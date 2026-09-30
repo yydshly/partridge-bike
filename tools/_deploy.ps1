@@ -69,8 +69,27 @@ try {
     Write-Output '=== 4/5 推送 gh-pages ==='
     $remote = "https://github.com/$Repo.git"
     if ((git remote) -contains 'origin') { git remote set-url origin $remote } else { git remote add origin $remote }
-    git push --force origin gh-pages 2>&1 | Select-Object -Last 2
-    if ($LASTEXITCODE -ne 0) { throw "推送失败（退出码 $LASTEXITCODE）" }
+    # ⚠️ 这里原来写的是 `git push ... 2>&1 | Select-Object -Last 2`，
+    #    配上本文件顶上的 `$ErrorActionPreference = 'Stop'`：
+    #    git 的进度行（`To https://…`）走的是 **stderr**，PowerShell 5.1 把它
+    #    包成 NativeCommandError 并**当成终止错误**，脚本在检查 $LASTEXITCODE
+    #    **之前**就中止了。
+    #    后果是：推送成功也报 exit 1，推送失败也报 exit 1 —— 两种情况的输出长得
+    #    一模一样，而第 5 步「核对线上」永远没机会跑。
+    #    （2026-10-01 实测：脚本 exit 1，实际上线 Content-Length 已经是新的。）
+    # 办法：这一段临时把 ErrorActionPreference 降成 Continue，让 stderr
+    # 老老实实走输出流，退出码单独抓。
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+      $pushOut = (git push --force origin gh-pages 2>&1 | Out-String)
+      $pushCode = $LASTEXITCODE
+    } finally {
+      $ErrorActionPreference = $prevEAP
+    }
+    if ($pushOut) { Write-Output (($pushOut.TrimEnd() -split "`n" | Select-Object -Last 2) -join "`n") }
+    if ($pushCode -ne 0) { throw "推送失败（退出码 $pushCode）" }
+    Write-Output '    ✓ 推送命令退出码 0'
   } else {
     Write-Output '=== 4/5 -NoPush：跳过推送 ==='
   }

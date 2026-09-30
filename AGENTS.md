@@ -1743,3 +1743,37 @@ B 阶段把 47 个文件搬进 8 个目录之后，`AGENTS.md` 最顶上那节�
 - doccheck 反查 **6/6**（好文档 / 四类漂移各自点名 / 四处同时坏）
 - 浏览器实测 `dist\_touchharness.html` → `PASS 52/52`
 - 其余七页沿用基线：`58/58` · `34/34` · `39/39` · `450/450` · `85/85` · `41/41` · `50/50`
+### ⚠️ 部署脚本：推送成功和推送失败，输出长得一模一样
+
+`tools\_deploy.ps1` 原来第 4 步是这么写的：
+
+```powershell
+$ErrorActionPreference = 'Stop'          # 文件顶上就有
+...
+git push --force origin gh-pages 2>&1 | Select-Object -Last 2
+if ($LASTEXITCODE -ne 0) { throw "推送失败" }
+```
+
+git 的进度行（`To https://…`）走的是 **stderr**。`2>&1` 把它并进输出流，
+可 PowerShell 5.1 仍然把它包成 `NativeCommandError`，而 `$ErrorActionPreference='Stop'`
+把这个记录当成**终止错误** —— 脚本在走到 `if ($LASTEXITCODE -ne 0)` **之前**就死了。
+
+后果：
+- 推送**成功** → exit 1
+- 推送**失败** → exit 1
+- 两种的输出长得一样，而第 5 步「核对线上」**永远没机会跑**
+
+2026-10-01 实测：脚本 exit 1，我以为没推上去；查线上 `Content-Length`
+已经是 11,737,808（新的），旧的是 11,732,169 —— 其实早就推上去了。
+
+修法：这一段临时把 `ErrorActionPreference` 降成 `Continue`，让 stderr
+老老实实走输出流，退出码单独抓，并在后面补一句 `✓ 推送命令退出码 0`。
+现在整条链 exit 0，第 5 步会自己核对线上字节数。
+
+> 泛化：**任何 `ErrorActionPreference = 'Stop'` 的脚本里调 git / curl 这类
+> 会往 stderr 写正常进度的命令，都要用同一个办法。**
+> 「报错」和「成功」在终端上长得一样，是这个项目反复交的学费：
+> `frame()` 缺 dt（画面全黑全绿）、`gen\_mkharness.ps1` 没人调用、
+> doccheck 漏了捕获组、我自己写坏一行 ParserError 误判成修好了。
+> 唯一管用的办法是**每次都去读那条检查自己的正常输出**（收尾行 / 计数行），
+> 而不是只看「有没有错误行」。
