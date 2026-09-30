@@ -21,7 +21,12 @@ $sb = [Text.StringBuilder]::new()
 [void]$sb.AppendLine('[')
 for ($i = 0; $i -lt $tracks.Count; $i++){
   $t = $tracks[$i]
-  $src = Join-Path $dir $t.f
+  # ⚠️ 这里原来写的是 `Join-Path $dir $t.f`（$dir = $ROOT）。
+  #    `$t.f` 来自 _bgm-meta.json，所以它**不是脚本里的字符串字面量** ——
+  #    A 阶段那道覆盖率闸门是静态的，只认字面量，这类从**数据**里来的
+  #    路径它看不见。加 mp3 时它也永远查不到，因为那行代码一个字都不改。
+  #    所以凡是「Join-Path + 运行时才有的第二个参数」，都要单独手工核一遍。
+  $src = Join-Path $DIR_BGM $t.f
   if (-not (Test-Path $src)) { throw "missing audio: $($t.f)" }
   $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($src))
   $lyr = @()
@@ -33,7 +38,13 @@ for ($i = 0; $i -lt $tracks.Count; $i++){
 $bgm = $sb.ToString()
 
 # ---- 2. inline three.js ----
-$lib = [IO.File]::ReadAllText((Join-Path $dir '_vendor\three149.min.js')) -replace '(?i)</script','<\/script'
+# ⚠️ 这里原来写的是 `Join-Path $dir '_vendor\three149.min.js'`。
+#    那是路径的**第二个出处**：A 阶段的覆盖率闸门当时只认 `'名字.ext'`
+#    这种光秃秃的叶子名，带目录前缀的字面量从它眼皮底下过去了 ——
+#    所以「零处硬编码」这个结论是不完整的，是后来把闸门改成
+#    「任意前缀 + 叶子名」才把它翻出来的。B 阶段要把 _vendor 搬进
+#    assets\vendor，这一行不改就会当场断掉。
+$lib = [IO.File]::ReadAllText(($THREE_LIB)) -replace '(?i)</script','<\/script'
 
 # ---- 3. splice both into the template ----
 $tpl = [IO.File]::ReadAllText(($APP))

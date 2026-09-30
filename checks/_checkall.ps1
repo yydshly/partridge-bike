@@ -26,23 +26,23 @@ function Step($name, $block){
 #    再拼一次，路径就又有了第二个出处 —— 那正是 A 阶段要消掉的东西。
 $ps = { param($f, $Path) if ($Path) { powershell -NoProfile -ExecutionPolicy Bypass -File $f -Path $Path } else { powershell -NoProfile -ExecutionPolicy Bypass -File $f } }
 
-Step '1/16 构建'            { & $ps $S_BUILD }
-Step '2/16 源码语法（注释/字符串配平）' { & $ps $S_SYNTAX -Path $APP }
-Step '3/16 成品语法（注释/字符串配平）' { & $ps $S_SYNTAX -Path $PRODUCT }
+Step '1/17 构建'            { & $ps $S_BUILD }
+Step '2/17 源码语法（注释/字符串配平）' { & $ps $S_SYNTAX -Path $APP }
+Step '3/17 成品语法（注释/字符串配平）' { & $ps $S_SYNTAX -Path $PRODUCT }
 # ⚠️ 这两步不是「保险」，是 2026-09-30 真抓到一个把整个 app 打死的东西：
 #    frame() 里 `S.tSec += dt` 的 dt 全文件没声明过，每帧抛 ReferenceError、
 #    画面全黑，而当时语法检查、作用域体检、六套 harness、交付自检**全绿**。
-Step '4/16 源码自由变量（作用域链）'  { & $ps $S_FREEVAR -Path $APP }
-Step '5/16 成品自由变量（作用域链）'  { & $ps $S_FREEVAR -Path $PRODUCT }
-Step '6/16 面板初始状态（生成注入探针）' { & $ps $S_MKUISTATE }
-Step '7/16 驾驶回归（生成）'  { & $ps $S_MKDRIVE }
-Step '8/16 车流+碰撞（生成）' { & $ps $S_MKTRAFFIC }
-Step '9/16 路段结构（生成）'   { & $ps $S_MKROUTE }
-Step '10/16 时段×天气（生成）'  { & $ps $S_MKMOOD }
-Step '11/16 自动巡航（生成）'   { & $ps $S_MKCRUISE }
-Step '12/16 鹧鸪状态机（生成）' { & $ps $S_MKMOODSTATE }
-Step '13/16 作用域体检'       { & $ps $S_SCOPE }
-Step '14/16 交付自检' {
+Step '4/17 源码自由变量（作用域链）'  { & $ps $S_FREEVAR -Path $APP }
+Step '5/17 成品自由变量（作用域链）'  { & $ps $S_FREEVAR -Path $PRODUCT }
+Step '6/17 面板初始状态（生成注入探针）' { & $ps $S_MKUISTATE }
+Step '7/17 驾驶回归（生成）'  { & $ps $S_MKDRIVE }
+Step '8/17 车流+碰撞（生成）' { & $ps $S_MKTRAFFIC }
+Step '9/17 路段结构（生成）'   { & $ps $S_MKROUTE }
+Step '10/17 时段×天气（生成）'  { & $ps $S_MKMOOD }
+Step '11/17 自动巡航（生成）'   { & $ps $S_MKCRUISE }
+Step '12/17 鹧鸪状态机（生成）' { & $ps $S_MKMOODSTATE }
+Step '13/17 作用域体检'       { & $ps $S_SCOPE }
+Step '14/17 交付自检' {
   $t = [IO.File]::ReadAllText(($PRODUCT))
   $src = Get-Item ($APP)
   $out = Get-Item ($PRODUCT)
@@ -121,14 +121,27 @@ Step '14/16 交付自检' {
   Write-Output ("  源 {0:N0} / 成品 {1:N0} bytes" -f $src.Length, $out.Length)
   $script:fail += $bad
 }
-Step '15/16 作用域检查器自检（喂它一份已知坏样本）' { & $ps $S_SCOPETEST }
-Step '16/16 语法/自由变量/悬空调用 检查器自检' {
+Step '15/17 作用域检查器自检（喂它一份已知坏样本）' { & $ps $S_SCOPETEST }
+Step '16/17 语法/自由变量/悬空调用/路径 检查器自检' {
   & $ps $S_SYNTEST
   & $ps $S_FREEVARTEST
   & $ps $S_LINTTEST
   & $ps $S_PAGESTEST
   & $ps $S_DRIVEWIRES
+  & $ps $S_PATHTEST
 }
+
+# ⚠️ 这一步以前**不存在**，而 A 阶段做的正是同一件事 —— 但它当时只活在
+#    一次性迁移工具 tools\_refactor.ps1 里。工具跑完就退休了，
+#    而「零处硬编码」会在**以后每一次**改动里被破坏：
+#    有人新写一个脚本，里面 `Join-Path $dir '_app3d.html'`，没有任何东西会响。
+#    只在迁移时验过一次的，不叫检查，叫一次性观察。
+#    顺带它还盯两件没人盯过的事：
+#      ② 路径来自**数据**（_build.ps1 的 `Join-Path $dir $t.f`）——
+#         静态判据 ① 看不见这种，可它照样会在文件一搬走时断掉；
+#      ③ 已跟踪的源文件有没有被 .gitignore 悄悄踢出版本库 ——
+#         光看 git status 看不出来，被忽略的文件根本没进索引。
+Step '17/17 路径收口（不变量常驻）' { & $ps $S_PATHCHECK }
 
 Write-Output ''
 # 页面清点放在最前面：缺页 / 一条断言都没有，本身就该算失败。

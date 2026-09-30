@@ -19,28 +19,30 @@
 #     - 必须带 UTF-8 BOM（.ps1 通例，PowerShell 5.1 靠 BOM 认中文）
 #     - 只定义变量 + 末尾自检，不做别的
 #
-#  📌 分层改造进度：
-#     A 阶段（2026-10-01）已完成 —— 路径唯一出处，28 个脚本零处硬编码。
-#     C 阶段（同日）—— 产物落到 dist/，源留在根目录。
-#     B 阶段（待做）—— docs / assets / tools / checks / harnesses 物理分层。
-#     无论后面怎么搬，都只改上面「目录」那一段。
+#  📌 分层改造进度（2026-10-01 全部完成）：
+#     A —— 路径唯一出处，脚本零处硬编码
+#     C —— 产物落到 dist/
+#     B —— 物理分层：src / assets / docs / tools / gen / templates / checks
+#     无论后面怎么搬，都只改下面「目录」那一段。
 $ErrorActionPreference = 'Stop'
 
-# ── 目录（2026-10-01 起：源在根目录，产物在 dist/）─────────────
-#  搬目录的时候**只改这一段**，其余行一个字都不用动。
+# ── 目录：这一段是整个仓库的**布局开关** ──────────────────────
+#  搬目录、改目录名、加目录，都只改这十几行。
+#  28 个脚本的头部引导是「从 $PSScriptRoot 往上找 _paths.ps1」，
+#  所以无论脚本自己在哪一层，都不用改。
 $ROOT       = $PSScriptRoot
-$DIR_SRC    = $ROOT              # _app3d.html
-$DIR_ASSETS = $ROOT              # 截图、README 配图
-$DIR_BGM    = $ROOT              # bgm-*.mp3（不可再生）
-$DIR_VENDOR = "$ROOT\_vendor"    # three149.min.js
-$DIR_TOOLS  = $ROOT              # _build / _deploy / _serve
-$DIR_GEN    = $ROOT              # _mk*.ps1
-$DIR_CHECKS = $ROOT              # 各类静态体检
-$DIR_SELF   = $ROOT              # 检查器的反查
-$DIR_TPL    = $ROOT              # _*.tpl.html
-$DIR_DOCS   = $ROOT
-$DIR_OUT    = "$ROOT\dist"       # 生成页（回归 harness、诊断页、实拍页）
-$DIR_DIST   = "$ROOT\dist"       # 构建产物 partridge-3d.html
+$DIR_SRC    = "$ROOT\src"             # _app3d.html（唯一可编辑源）+ _bgm-meta.json
+$DIR_ASSETS = "$ROOT\assets"          # 构建输入与素材
+$DIR_BGM    = "$DIR_ASSETS\bgm"       # bgm-*.mp3（8.2 MB，不可再生，唯一的副本）
+$DIR_VENDOR = "$DIR_ASSETS\vendor"    # three149.min.js
+$DIR_DOCS   = "$ROOT\docs"            # 截图等文档配图
+$DIR_TOOLS  = "$ROOT\tools"           # _build / _deploy / _serve / _swap / _refactor
+$DIR_GEN    = "$ROOT\gen"             # _mk*.ps1 生成器
+$DIR_TPL    = "$ROOT\templates"       # _*.tpl.html 回归页模板
+$DIR_CHECKS = "$ROOT\checks"          # 静态体检 + 编排器
+$DIR_SELF   = "$DIR_CHECKS\self"      # 检查器自己的反查
+$DIR_OUT    = "$ROOT\dist"            # 生成页（回归 harness、诊断页、实拍页）
+$DIR_DIST   = "$ROOT\dist"            # 构建产物 partridge-3d.html
 
 # dist/ 里**全部是生成的**，所以整目录进 .gitignore。
 # 在这里建（而不是让每个生成器各自建）的好处是：搬目录时它跟着走，
@@ -52,42 +54,54 @@ if (-not (Test-Path -LiteralPath $DIR_OUT)) {
 # ── 关键文件 ──────────────────────────────────────────────────
 $APP       = "$DIR_SRC\_app3d.html"                         # 唯一可编辑源
 $PRODUCT   = "$DIR_DIST\partridge-3d.html"                  # 构建产物
-$BGM_META  = "$ROOT\_bgm-meta.json"                         # 曲目表 + 歌词
-$THREE_LIB = "$DIR_VENDOR\three149.min.js"                  # 构建输入
+$BGM_META  = "$DIR_SRC\_bgm-meta.json"                      # 曲目表 + 歌词
+$THREE_LIB = "$DIR_VENDOR\three149.min.js"                 # 构建输入
 $README    = "$ROOT\README.md"
 $AGENTS    = "$ROOT\AGENTS.md"
+$SCREENSHOT= "$DIR_DOCS\screenshot.jpg"
 $GITIGNORE = "$ROOT\.gitignore"
 $GITATTRS  = "$ROOT\.gitattributes"
 
-# ── 脚本清单（编排器 _checkall.ps1 和清点器 _pages.ps1 都要用）──
+# ── tools/：一条命令跑完一件事的那些 ──────────────────────────
 $S_BUILD     = "$DIR_TOOLS\_build.ps1"
 $S_DEPLOY    = "$DIR_TOOLS\_deploy.ps1"
 $S_SERVE     = "$DIR_TOOLS\_serve.ps1"
+$S_SWAP      = "$DIR_TOOLS\_swap.ps1"
+
+# ── checks/：判「代码对不对」的那些 ──────────────────────────
 $S_CHECKALL  = "$DIR_CHECKS\_checkall.ps1"
 $S_SYNTAX    = "$DIR_CHECKS\_syntaxcheck.ps1"
 $S_FREEVAR   = "$DIR_CHECKS\_freevar.ps1"
 $S_SCOPE     = "$DIR_CHECKS\_scopecheck.ps1"
 $S_LINT      = "$DIR_CHECKS\_harnesslint.ps1"
 $S_PAGES     = "$DIR_CHECKS\_pages.ps1"
-$S_SCOPETEST = "$DIR_SELF\_scopetest.ps1"
-$S_SYNTEST   = "$DIR_SELF\_syntest.ps1"
+$S_PATHCHECK = "$DIR_CHECKS\_pathcheck.ps1"
+
+# ── checks/self/：判「上面这些判据自己靠不靠谱」的那些 ─────────
+$S_SCOPETEST   = "$DIR_SELF\_scopetest.ps1"
+$S_SYNTEST     = "$DIR_SELF\_syntest.ps1"
 $S_FREEVARTEST = "$DIR_SELF\_freevartest.ps1"
-$S_LINTTEST  = "$DIR_SELF\_linttest.ps1"
-$S_PAGESTEST = "$DIR_SELF\_pagestest.ps1"
-$S_DRIVEWIRES= "$DIR_SELF\_drivewires.ps1"
+$S_LINTTEST    = "$DIR_SELF\_linttest.ps1"
+$S_PAGESTEST   = "$DIR_SELF\_pagestest.ps1"
+$S_DRIVEWIRES  = "$DIR_SELF\_drivewires.ps1"
+$S_PATHTEST    = "$DIR_SELF\_pathtest.ps1"
 
-# 九个生成器
-$S_MKDRIVE    = "$DIR_GEN\_mkdrive.ps1"
-$S_MKTRAFFIC  = "$DIR_GEN\_mktraffic.ps1"
-$S_MKROUTE    = "$DIR_GEN\_mkroute.ps1"
-$S_MKMOOD     = "$DIR_GEN\_mkmood.ps1"
-$S_MKCRUISE   = "$DIR_GEN\_mkcruise.ps1"
-$S_MKMOODSTATE= "$DIR_GEN\_mkmoodstate.ps1"
-$S_MKUISTATE  = "$DIR_GEN\_mkuistate.ps1"
-$S_MKDBG      = "$DIR_GEN\_mkdbg.ps1"
-$S_MKDIAG     = "$DIR_GEN\_mkdiag.ps1"
+# ── gen/：生成器 ─────────────────────────────────────────────
+$S_MKDRIVE     = "$DIR_GEN\_mkdrive.ps1"
+$S_MKTRAFFIC   = "$DIR_GEN\_mktraffic.ps1"
+$S_MKROUTE     = "$DIR_GEN\_mkroute.ps1"
+$S_MKMOOD      = "$DIR_GEN\_mkmood.ps1"
+$S_MKCRUISE    = "$DIR_GEN\_mkcruise.ps1"
+$S_MKMOODSTATE = "$DIR_GEN\_mkmoodstate.ps1"
+$S_MKUISTATE   = "$DIR_GEN\_mkuistate.ps1"
+$S_MKDIAG      = "$DIR_GEN\_mkdiag.ps1"
+$S_MKHARNESS   = "$DIR_GEN\_mkharness.ps1"
+$S_MKPAUSE     = "$DIR_GEN\_mkpause.ps1"
+$S_MKREC       = "$DIR_GEN\_mkrec.ps1"
+# _mkdbg.ps1 是**实拍探针**，不是回归页生成器，所以单列（它只出临时页）
+$S_MKDBG       = "$DIR_GEN\_mkdbg.ps1"
 
-# 九个模板
+# ── templates/：九个回归页模板 ────────────────────────────────
 $TPL_DRIVE     = "$DIR_TPL\_driveharness.tpl.html"
 $TPL_TRAFFIC   = "$DIR_TPL\_trafficharness.tpl.html"
 $TPL_ROUTE     = "$DIR_TPL\_routeharness.tpl.html"
@@ -141,14 +155,20 @@ if ($outProbeGone.Count -gt 0) {
 # ── 自检：所有**必须存在**的路径，缺一个就当场炸 ──────────────
 #  这条是整个收口的地基：搬目录时路径写错，错误会在第一秒暴露，
 #  而不是等到某个 harness 静默跑空、然后所有检查照样全绿。
-#  「产物」和「生成页」不在检查范围 —— 它们本来就可能还不存在。
+#  「产物」和「生成页」不在检查范围 —— 它们本来就可能还没存在。
+#
+#  ⚠️ 这一份清单是**手工维护**的，所以它自己也会过期：加了新脚本却忘了
+#  往里加一行，它就不会被这条自检覆盖。所以清单里每一项都必须同时
+#  出现在上面的赋值里（_pathcheck.ps1 会反过来验这两份对不对得上）。
 $mustExist = @(
-  $APP, $BGM_META, $THREE_LIB, $README, $AGENTS, $GITIGNORE, $GITATTRS,
-  $S_BUILD, $S_SERVE, $S_CHECKALL, $S_SYNTAX, $S_FREEVAR, $S_SCOPE, $S_LINT, $S_PAGES,
-  $S_SCOPETEST, $S_SYNTEST, $S_FREEVARTEST, $S_LINTTEST, $S_PAGESTEST, $S_DRIVEWIRES,
+  $APP, $BGM_META, $THREE_LIB, $README, $AGENTS, $SCREENSHOT, $GITIGNORE, $GITATTRS,
+  $S_BUILD, $S_DEPLOY, $S_SERVE, $S_SWAP,
+  $S_CHECKALL, $S_SYNTAX, $S_FREEVAR, $S_SCOPE, $S_LINT, $S_PAGES, $S_PATHCHECK,
+  $S_SCOPETEST, $S_SYNTEST, $S_FREEVARTEST, $S_LINTTEST, $S_PAGESTEST, $S_DRIVEWIRES, $S_PATHTEST,
   $S_MKDRIVE, $S_MKTRAFFIC, $S_MKROUTE, $S_MKMOOD, $S_MKCRUISE, $S_MKMOODSTATE,
-  $S_MKUISTATE, $S_MKDBG, $S_MKDIAG,
-  $TPL_DRIVE, $TPL_TRAFFIC, $TPL_ROUTE, $TPL_MOOD, $TPL_CRUISE, $TPL_MOODSTATE
+  $S_MKUISTATE, $S_MKDIAG, $S_MKHARNESS, $S_MKPAUSE, $S_MKREC, $S_MKDBG,
+  $TPL_DRIVE, $TPL_TRAFFIC, $TPL_ROUTE, $TPL_MOOD, $TPL_CRUISE, $TPL_MOODSTATE,
+  $TPL_CRUISEDIAG, $TPL_MUSIC, $TPL_BGM2
 )
 $missing = @()
 foreach ($q in $mustExist) { if (-not (Test-Path -LiteralPath $q)) { $missing += $q } }

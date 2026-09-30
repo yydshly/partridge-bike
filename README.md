@@ -1,6 +1,6 @@
 # 鹧鸪骑单车 3D · Partridge on Wheels
 
-![鹧鸪骑单车](screenshot.jpg)
+![鹧鸪骑单车](docs/screenshot.jpg)
 
 一只鹧鸪骑车。Three.js 单文件动画，**11.7 MB，一个 HTML 文件就是全部**——
 不需要联网、不需要装任何东西、不需要起服务器。
@@ -15,7 +15,7 @@
 > ⚠️ **窄屏还没适配**：整个项目一条 `@media` 都没有。手机上画面能跟着缩放，
 > 但底下那 24 个按钮会挤在一起。桌面浏览器才是完整体验。
 
-> 线上这份是从 `gh-pages` 分支发布的，它就是 `_build.ps1` 的产物，一个字节都没改。
+> 线上这份是从 `gh-pages` 分支发布的，它就是 `tools\_build.ps1` 的产物，一个字节都没改。
 > `main` 分支里**没有**这个 11.7 MB 的文件，原因见下。
 
 ## 或者本地跑
@@ -26,21 +26,40 @@
 ```powershell
 git clone https://github.com/yydshly/partridge-bike.git
 cd partridge-bike
-powershell -NoProfile -ExecutionPolicy Bypass -File .\_build.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\_build.ps1
 ```
 
 看到 `built partridge-3d.html  11,732,169 bytes` 就成了，
 之后**双击 `dist\parridge-3d.html`** 即可运行（`file://` 直开，不需要起服务）。
 
-**为什么不把成品提交进 `main`**：它是 252 KB 的 `_app3d.html` 拼出来的，
+**为什么不把成品提交进 `main`**：它是 252 KB 的 `src\_app3d.html` 拼出来的，
 改一行源码就产生一个 11.7 MB 的新 blob。几轮改动后 `.git` 就会膨胀到
 几百 MB，而换不回任何信息——那些内容都能重建。要部署就用 `gh-pages` 分支。
-`_build.ps1` 需要三样东西，全都在仓库里：`_app3d.html`、`bgm-1..8.mp3`、
-`_vendor/three149.min.js`。
+`tools\_build.ps1` 需要三样东西，全都在仓库里：`src\_app3d.html`、`assets\bgm\*.mp3`、
+`assets\vendor\three149.min.js`。
 
-**目录约定**：根目录放**源**，`dist\` 放**产物**（成品 + 七个回归页 +
-诊断页/实拍页），整目录在 `.gitignore` 里。`dist\` 由 `_paths.ps1`
-自动创建——跑任何脚本都不用先手动建它。
+### 目录长什么样
+
+```
+partridge-bike\
+  _paths.ps1        ← 全仓库路径的唯一出处
+  README.md  AGENTS.md
+  src\              唯一可编辑源 _app3d.html + 曲目表 _bgm-meta.json
+  assets\
+    bgm\            8 首 MP3（8.2 MB，**不可再生**）
+    vendor\         three149.min.js
+  docs\             截图
+  templates\        9 个回归页模板
+  gen\              12 个生成器（_mk*.ps1），从 _app3d.html 切代码段造回归页
+  tools\            _build / _deploy / _serve / _swap / _refactor
+  checks\           编排器 _checkall.ps1 + 五个静态判据 + _pathcheck
+    self\           六个「判据自己靠不靠谱」的反查
+  dist\             **全部产物**，整目录在 .gitignore 里
+```
+
+根目录只剩 5 个文件 —— 「哪个是源、哪个是产物」不用再靠记。
+
+`dist\` 由 `_paths.ps1` 自动创建，跑任何脚本都不用先手动建它。
 
 ## 怎么玩
 
@@ -78,19 +97,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\_build.ps1
 
 | | |
 |---|---|
-| `_app3d.html` | **唯一可编辑源**（252 KB，带两个占位符） |
-| `bgm-1..8.mp3` | 配乐源文件（8.2 MB，AI 生成，不可再生） |
-| `_vendor/three149.min.js` | three.js r149，构建时内联 |
+| `src/_app3d.html` | **唯一可编辑源**（252 KB，带两个占位符） |
+| `assets/bgm/*.mp3` | 配乐源文件（8.2 MB，AI 生成，不可再生） |
+| `assets/vendor/three149.min.js` | three.js r149，构建时内联 |
 | `_paths.ps1` | **全仓库路径的唯一出处**（下面每一个路径都从它来） |
-| `_build.ps1` | 把上面三样拼成 `dist\parridge-3d.html` |
-| `_checkall.ps1` | **一条命令跑完全部验证**（16 步） |
-| `_*.tpl.html`（9 个） | 回归页模板，套桩用 |
-| `_*.ps1` | 生成器与检查器 |
+| `tools/_build.ps1` | 把上面三样拼成 `dist\parridge-3d.html` |
+| `checks/_checkall.ps1` | **一条命令跑完全部验证**（17 步） |
+| `templates/_*.tpl.html`（9 个） | 回归页模板，套桩用 |
+| `gen/_mk*.ps1`（12 个） | 生成器：从源文件**切代码段**造回归页 |
+| `checks/` | 五个静态判据 + `_pages` 清点 + `_pathcheck` 路径收口 |
+| `checks/self/`（6 个） | 「判据自己靠不靠谱」的反查 |
+| `tools/` | `_build` `_deploy` `_serve` `_swap` `_refactor` |
 | `dist/` | 全部产物：成品 + 7 个回归页 + 诊断页/实拍页（整目录 gitignore） |
 | `AGENTS.md` | 项目记忆与方法论（踩过的坑都在里面） |
 | `.gitignore` | 排除 `dist\`（= 9 个产物：1 成品 + 1 探针 + 7 回归页） |
 
-**路径只有一处出处。** 28 个脚本开头都是这三行，往上找 `_paths.ps1`：
+**路径只有一处出处。** 32 个脚本开头都是这三行，从 `$PSScriptRoot` 往上找 `_paths.ps1`——
 
 ```powershell
 $p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
@@ -99,7 +121,7 @@ if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
 ```
 
 所以**搬目录、改文件名、挪产物位置，只改 `_paths.ps1` 里的目录定义**，
-其余文件一个字都不用动。`_paths.ps1` 末尾会自查 36 个必须存在的路径，
+其余文件一个字都不用动。`_paths.ps1` 末尾会自查 57 个必须存在的路径，
 搬错了在第一秒就炸，而不是等到某个 harness 静默跑空、而所有检查照样全绿。
 
 **`.ps1` 必须是 UTF-8 with BOM。** 少了 BOM，PowerShell 5.1 会按 ANSI
@@ -109,10 +131,10 @@ if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
 ## 验证
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\_checkall.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\checks\_checkall.ps1
 ```
 
-16 步：构建 → 语法（源码 + 成品）→ 自由变量/作用域 ×2 → 重新生成六个回归页
+17 步：构建 → 语法（源码 + 成品）→ 自由变量/作用域 ×2 → 重新生成六个回归页
 → 面板状态探针 → 作用域体检 → 交付自检 → 五套检查器的自检。
 
 **它只证明「能生成、能通过静态检查」，证明不了画面。** 画面只能靠真机打开
@@ -127,7 +149,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\_checkall.ps1
 `dist\_moodharness.html` · `dist\_cruiseharness.html` · `dist\_moodstate.html` ·
 `dist\_uistate.html`
 
-它们不是手抄的，是 `_mk*.ps1` 从 `_app3d.html` **按标记切原文**再套一层桩，
+它们不是手抄的，是 `gen\_mk*.ps1` 从 `src\_app3d.html` **按标记切原文**再套一层桩，
 所以测的就是产品真正在跑的那段代码。
 
 七套实测（2026-10-01）：`58/58` · `34/34` · `39/39` · `450/450` · `85/85` ·
@@ -135,6 +157,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\_checkall.ps1
 
 ## 许可与来源
 
-- 渲染：[three.js](https://threejs.org/) r149，**已 vendored** 在 `_vendor/`，不联网拉取。
+- 渲染：[three.js](https://threejs.org/) r149，**已 vendored** 在 `assets\vendor\`，不联网拉取。
 - 配乐：8 首 AI 生成的曲子，音频文件保留在仓库里。生成条款若有要求，请按实际情况补充本节。
 - 画面、模型、代码：全部程序生成，无外部素材。

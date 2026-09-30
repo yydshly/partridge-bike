@@ -151,7 +151,11 @@ function Test-Edited([string[]]$new, [string[]]$expected, [int]$at, [string[]]$i
 #   ⑤ 引导少插一行         → 必须点名「第 5 行对不上」
 # 只测 ① 的话，一把永远说「没事」的尺子也能过；只测 ② 的话，③④⑤ 恒过了也不知道。
 # 点名是关键：只报「有问题」的话，别的错也会触发，同样抓不到真问题。
-$probeOrig = @('param()', '$ErrorActionPreference = ''Stop''', '$dir = ''E:\x''', '$t = Join-Path $dir ''_app3d.html''')
+# ⚠️ 探针里那个文件名**运行时才取**（从 $APP 推叶子），不写字面量 ——
+#    写了 checks\_pathcheck.ps1 就会把本文件自己报成一处硬编码。
+#    一份能测出别人问题的工具，不该自己先犯规。
+$probeLeaf  = Split-Path $APP -Leaf
+$probeOrig = @('param()', '$ErrorActionPreference = ''Stop''', '$dir = ''E:\x''', ('$t = Join-Path $dir ' + [char]39 + $probeLeaf + [char]39))
 $probeIns  = @($BOOT) + @('$dir = $ROOT')
 # 正确结果长这样（7 行）：原头 2 行 + 引导 4 行 + 原尾 1 行
 $probeGood = @($probeOrig[0..1]) + $probeIns + @($probeOrig[3..3])
@@ -321,18 +325,25 @@ Write-Output ("共替换 {0} 处。" -f $total)
 #
 # 这道闸门反过来问：**_paths.ps1 认得的文件名，代码里还有哪几处是硬写的？**
 # 有就点名到「文件:行号」，退出码非 0。剩下 0 条才算这一阶段做完。
-# 「不认得的字面量」（各脚本自己造的临时文件、index.html）不在射程内，
+# 「不认得的字面量」（各脚本自己造的临时文件）不在射程内，
 # 单独列出来当人工清单，不算失败。
+#
+# ⚠️ **第一版这闸门只认 `'名字.ext'` 这种光秃秃的叶子名**，
+#    于是 `'_vendor\three149.min.js'` 这种**带目录前缀**的字面量
+#    从它眼皮底下过去了（_build.ps1 就有一处）。所以现在匹配的是
+#    `'任意前缀 + 叶子名'`，只拿**叶子名**去查表 —— 前缀是哪儿的不管，
+#    只要文件是 _paths.ps1 认得的那个，就该走变量。
 $stragglers = @()
 $unknown = @()
+$leafRx = [regex]"'(?:[^']*[\\/])?([A-Za-z0-9_\-\.]+\.(?:ps1|html|json|mp3|js|jpg))'"
 foreach ($f in $targets) {
   $lines = [IO.File]::ReadAllLines($f.FullName)
   for ($i = 0; $i -lt $lines.Count; $i++) {
     if ($lines[$i] -match '^\s*#') { continue }
-    foreach ($mm in [regex]::Matches($lines[$i], "'([A-Za-z0-9_\-\.]+\.(?:ps1|html|json|mp3|js|jpg))'")) {
+    foreach ($mm in $leafRx.Matches($lines[$i])) {
       $leaf = $mm.Groups[1].Value
       if ($leaf -eq '_paths.ps1') { continue }    # 引导本身必须写死这个名字
-      $tag = ($f.Name + ':' + ($i + 1) + '  ' + $leaf)
+      $tag = ($f.Name + ':' + ($i + 1) + '  [' + $mm.Value + ']')
       if ($map.ContainsKey($leaf)) { $stragglers += $tag } else { $unknown += $tag }
     }
   }

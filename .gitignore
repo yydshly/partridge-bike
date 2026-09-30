@@ -2,34 +2,42 @@
 #  dist/ 整个目录都是生成的，**不要**进版本库
 # ─────────────────────────────────────────────────────────────
 #
-#  为什么必须排除：parridge-3d.html 有 11.7 MB，而它是从一个
-# 252 KB 的 _app3d.html 拼出来的。改一行源码就产生一个 11.7 MB
-# 的新 blob，几轮改动之后 .git 就会膨胀到几百 MB，而换不回任何信息
-# （能重建的是重建得出来的）。
-#  想跑成品（需要 _app3d.html + bgm-*.mp3 + _vendor/）：
-#      powershell -NoProfile -ExecutionPolicy Bypass -File .\_build.ps1
+#  为什么必须排除：partridge-3d.html 有 11.7 MB，而它是从一个
+#  252 KB 的 src\_app3d.html 拼出来的。改一行源码就产生一个 11.7 MB
+#  的新 blob，几轮改动之后 .git 就会膨胀到几百 MB，而换不回任何信息
+#  （能重建的是重建得出来的）。
+#  想跑成品（需要 src\_app3d.html + assets\bgm\*.mp3 + assets\vendor\）：
+#      powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\_build.ps1
 #
-#  2026-10-01 起产物不再落在根目录。dist/ 里包括：
-#    parridge-3d.html    构建产物
-#    _uistate.html       注入式探针页 = 成品 + 一段检查代码
-#    _driveharness.html  等 7 个回归页：由 _mk*.ps1 从 _app3d.html
-#                        **切代码段**生成。切的是源文件里的原文，
-#                        不是手抄，所以不提交也不会丢任何信息
-#    _cruisediag.html    诊断页
-#    parridge-dbg.html   实拍页（_mkdbg.ps1 生成，验完就删）
+#  dist/ 里包括：
+#    partridge-3d.html    构建产物
+#    _uistate.html        注入式探针页 = 成品 + 一段检查代码
+#    _driveharness.html   等 7 个回归页：由 gen\_mk*.ps1 从 src\_app3d.html
+#                         **切代码段**生成。切的是源文件里的原文，
+#                         不是手抄，所以不提交也不会丢任何信息
+#    _cruisediag.html     诊断页
+#    partridge-dbg.html   实拍页（gen\_mkdbg.ps1 生成，验完就删）
+#    _pathtest.ps1        反查用的靶子，只在 checks\self\_pathtest.ps1
+#                         跑的那几秒里存在，验完自己删
 dist/
 
 # ─────────────────────────────────────────────────────────────
 #  下面这些是**源**，绝对不要加进忽略列表
 # ─────────────────────────────────────────────────────────────
-#   bgm-1..8.mp3         8.2 MB，AI 生成的配乐，**不可再生**，唯一的副本
-#   _vendor/three149.min.js   构建输入，build.ps1 直接读它内联进成品
-#   _app3d.html          唯一可编辑源
-#   _*.tpl.html          回归页模板
-#   _bgm-meta.json       曲目表 + 歌词
-#   AGENTS.md            项目记忆
+#   assets\bgm\*.mp3          8.2 MB，AI 生成的配乐，**不可再生**，
+#                             唯一的副本 —— 丢了就没有了
+#   assets\vendor\three149.min.js   构建输入，build.ps1 直接内联进成品
+#   src\_app3d.html           唯一可编辑源
+#   templates\_*.tpl.html     回归页模板
+#   src\_bgm-meta.json        曲目表 + 歌词
+#   AGENTS.md                 项目记忆
+#
+#  整目录 ignore 的代价：它把「目录里到底是什么」的判断从**每次列举**
+#  变成**一次性保证**，而保证会过期。所以 checks\_pathcheck.ps1 里有一条
+#  兜底判据：「已跟踪文件里被 ignore 的数量 == 0」——
+#  光看 git status 看不出来，被忽略的文件根本没进索引，也就没什么「要删的」。
 
-# 临时/实验产物（检查器的反查会在根目录造这些，验完自己删）
+# 临时/实验产物（检查器的反查会造这些，验完自己删）
 _mutant*.html
 _*test.html
 _*mutant.html
