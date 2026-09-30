@@ -25,7 +25,9 @@ Write-Output ("    产物 {0:N0} bytes" -f $size)
 if ($size -lt 5MB) { throw "产物只有 $size 字节，八成没构建对，先别推" }
 
 Write-Output '=== 2/5 准备暂存目录 ==='
-if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+# 用 mavis-trash 而不是 Remove-Item -Recurse -Force —— 和本项目其他脚本一致，
+# 万一路径变量写错，那是可恢复的删除而不是永久丢失。
+if (Test-Path $stage) { mavis-trash $stage }
 $null = New-Item -ItemType Directory -Path $stage -Force
 Copy-Item $product (Join-Path $stage 'index.html') -Force
 
