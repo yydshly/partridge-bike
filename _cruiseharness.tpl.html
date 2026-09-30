@@ -1,0 +1,551 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>cruise harness</title>
+<style>body{background:#0b0e13;color:#e9eef6;font:13px/1.6 Consolas,monospace;padding:14px;white-space:pre}
+.ok{color:#4ecdc4}.bad{color:#ff6b6b}h3{color:#ffd166;margin:14px 0 4px}</style></head><body><div id="o">running…</div>
+<script>
+/* ── 替身 ───────────────────────────────────────────────────
+   这里没有整个 app，只有控制器需要的那几样：S、RIDERS、clamp、$。
+   ⚠️ 车辆物理（steer → yaw → lat）**必须照抄 app 里那条链**，
+     不然测的就是另一台车。符号全靠它：
+       steer > 0 → yaw 减小 → lat 增大（往 +z，右）
+     抄错符号的话，下面每一条「往回掰」都会反过来测。 */
+const ROAD_W = 3.9;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const V_MAX = 36;
+
+const keys = { left:false, right:false, up:false, down:false };
+const S = {
+  running:true, cruise:false, speed:15, target:15, sliderHold:false,
+  tSec:0, steer:0, steerIn:0, yaw:0, lat:0, capT:0,
+  autoLat:0, autoSide:0
+};
+let CAP = '';
+const $ = () => ({ set innerHTML(v){ CAP = v; } });
+
+/* RIDERS 替身：只要 dir / vr / position.xz，别的用不到 */
+let RIDERS = [];
+function mkRider(dir, z, x, vr){ return { userData:{ dir, vr }, position:{ x, z } }; }
+function clearRiders(){ RIDERS = []; }
+
+/* ── 车辆物理：照抄 _app3d.html 的 frame() steering 段 ── */
+function physics(dt, steerIn){
+  S.steer  += (steerIn - S.steer) * Math.min(1, dt*11.0);
+  const spd = S.speed/3.6;
+  const grip = clamp(S.speed/3.5, 0, 1);
+  S.yaw -= S.steer * 1.45 * grip * dt / (1 + S.speed*0.032);
+  S.lat += -Math.sin(S.yaw) * spd * dt;
+}
+
+/* 一整段仿真：跑 n 帧，每帧先算舵、再走物理、再把车流推一遍。
+   ⚠️ 车流**必须真的在动**。第一版没推，于是前面那辆永远停在 12 m 外，
+   「够不够得着」那条判据恒不成立，避让的四条断言全成了恒过。
+   公式照抄 app 的 frame() traffic 段。 */
+function moveRiders(v, dt){
+  for (const r of RIDERS){
+    const u = r.userData;
+    if (u.dir > 0) r.position.x += (u.vr/3.6 - v) * dt;
+    else           r.position.x -= (u.vr/3.6 + v) * dt;
+  }
+}
+function sim(n, dt, onFrame, traffic){
+  for (let i = 0; i < n; i++){
+    S.steerIn = S.cruise ? cruiseTick(dt) : (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+    physics(dt, S.steerIn);
+    if (traffic !== false) moveRiders(S.speed/3.6, dt);
+    if (onFrame) onFrame(i);
+  }
+}
+/* 车道边界（照抄 app）*/
+const LANE = ROAD_W/4;
+const T_MIN = -LANE - ROAD_W/2, T_MAX = -LANE + ROAD_W/2;
+const CLAMP_PAD = 0.55;
+function bounds(){
+  if (S.lat < T_MIN - CLAMP_PAD){ S.lat = T_MIN - CLAMP_PAD; S.yaw *= 0.55; }
+  if (S.lat > T_MAX + CLAMP_PAD){ S.lat = T_MAX + CLAMP_PAD; S.yaw *= 0.55; }
+}
+
+/* ---- 真实代码，从 _app3d.html 原样切出来 ---- */
+/*__CRUISE__*/
+
+/* ---- 真实车道 + 真实车流摆法（长时段集成回归用） ---- */
+/*__LANES__*/
+let _seed = 20260930;
+const rr = (a, b) => a + (_seed = (_seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff * (b - a);
+/*__LAYOUT__*/
+
+/* ═══ 断言 ═══ */
+const L = [];
+const ok = (c, n, d) => L.push([!!c, n, d === undefined ? '' : d]);
+const near = (a, b, e) => Math.abs(a - b) <= (e === undefined ? 1e-9 : e);
+function reset(lat, yaw, speed, cruise){
+  S.lat = lat; S.yaw = yaw; S.speed = speed === undefined ? 20 : speed;
+  S.steer = 0; S.steerIn = 0; S.autoLat = 0; S.autoSide = 0;
+  S.cruise = cruise === undefined ? true : cruise; S.target = S.speed;
+  clearRiders();
+}
+
+/* ═══ 1. 常数：符号和量纲 ═══ */
+ok(near(LANE_HALF, 0.975), '右车道半宽 = 0.975 m', LANE_HALF);
+ok(near(LANE_HALF, ROAD_W/4), '等于 ROAD_W/4（右车道是一条车道的一半）');
+ok(AVOID_OFF < LANE_HALF - 0.15, '避让量留了路肩余量', AVOID_OFF + ' < ' + (LANE_HALF-0.15));
+ok(AVOID_OFF > 0.38 + 0.15, '避让量比碰撞半宽 0.38 多出足够的余量', AVOID_OFF + ' > 0.53');
+ok(KP_LAT > 0, 'KP_LAT > 0：偏了要往「有偏差的那边」掰（steer>0 → lat 增）', KP_LAT);
+ok(KD_YAW > 0, 'KD_YAW 是阻尼项，正号（因为 yaw -= steer·k）', KD_YAW);
+/* 极性实锤：yaw 已经偏了，控制器给的 steer 必须**和 yaw 同号** ——
+   因为 steer 增大 → yaw 减小，steer 跟 yaw 同号才是在把 yaw 摁回 0。
+   写成反号就是正反馈，线性化后特征值实部 +0.685，系统发散。 */
+{
+  const y = 0.2;
+  const cmd = clamp(KP_LAT*0 + KD_YAW*y, -1, 1);
+  ok(cmd > 0, 'yaw 为正时 steer 也为正（这样 yaw 才会被摁回 0）', cmd.toFixed(3));
+  ok(cmd < 0 === false && clamp(KP_LAT*0 - KD_YAW*y, -1, 1) < 0,
+     '反号的那一版会给 steer 负值 —— 判据能分辨两者');
+}
+/* 横向极性：lat 偏左（+? 还是 -?）时 steer 要把它拉回来。
+   直接用物理验：steer > 0 → lat 增大。所以 lat > autoLat 时 steer 必须 > 0。 */
+{
+  reset(0.4, 0, 20);
+  const cmd = cruiseTick(1/60);
+  ok(cmd < 0, 'lat = +0.4（偏右）时 steer 为负 → 往左掰回来', cmd.toFixed(3));
+  reset(-0.4, 0, 20);
+  const cmd2 = cruiseTick(1/60);
+  ok(cmd2 > 0, 'lat = -0.4（偏左）时 steer 为正 → 往右掰回来', cmd2.toFixed(3));
+  reset(0, 0, 20);
+  ok(Math.abs(cruiseTick(1/60)) < 1e-12, '正在中线上 → steer = 0（不打方向）');
+}
+
+/* ═══ 2. 循线：收敛 ═══ */
+for (const start of [0, 0.4, -0.4, 0.9, -0.9]){
+  reset(start, 0, 20);
+  const lat0 = S.lat;
+  sim(60*6, 1/60);                     // 6 秒
+  const err0 = Math.abs(lat0), err1 = Math.abs(S.lat);
+  // 起点就是 0 时「更接近」无从谈起（0 不可能比 0 更小），用 <=
+  ok(err1 <= err0, '偏 ' + lat0.toFixed(2) + ' m → 6 秒后不偏离中线',
+     err0.toFixed(3) + ' → ' + err1.toFixed(3));
+}
+{ // 完全收敛
+  reset(0.9, 0, 20);
+  sim(60*12, 1/60);
+  ok(Math.abs(S.lat) < 0.05, '12 秒后横向误差 < 5 cm', (S.lat*100).toFixed(1) + ' cm');
+  ok(Math.abs(S.yaw) < 0.02, '12 秒后车头也回正了', S.yaw.toFixed(4));
+}
+{ // 从一个歪掉的航向开始（用户「打了一把方向然后松手」之后的真实状态）
+  reset(0, -0.28, 20);
+  sim(60*10, 1/60);
+  ok(Math.abs(S.yaw) < 0.05, '带着 0.28 rad 的歪航向，10 秒内掰回正', S.yaw.toFixed(4));
+  ok(Math.abs(S.lat) < 0.15, '而且横向也没跑出车道', (S.lat*100).toFixed(1) + ' cm');
+}
+{ // 极限初值：车已经骑到路肩上（T_MAX = 0.975，硬边界 1.525）。
+   // 别拿 2.4 起手 —— app 里 lat 被夹在 1.525，那个初值根本到不了，
+   // 测出来的「越界」是初值自带的，不是控制器造成的。
+  // ⚠️ 判据是「多久回到路面」，不是「有几帧在界外」。
+  //   上一版写的是 `over <= 2 帧`，量出来 17 帧就判 FAIL —— 可那是
+  //   0.28 秒，起点本来就比路面边缘靠外 0.47 m，从这儿拐回来 0.28 秒
+  //   很正常。真正该管的是两件事：① 别越走越远（发散）② 别赖在路上
+  //   不回来（发散得更慢的那种）。这两条发散时都会翻。
+  reset(1.45, 0.2, 20);
+  let worst = -99, outFrames = 0, lastOut = -1;
+  sim(60*8, 1/60, (i) => {
+    worst = Math.max(worst, Math.abs(S.lat));
+    if (S.lat > T_MAX + 0.02){ outFrames++; lastOut = i/60; }   // 记**最后**一帧，不是第一帧
+  });
+  ok(worst <= 1.45 + 1e-6, '从路肩上起步，全程没比出发点更远', worst.toFixed(3));
+  ok(lastOut > 0 && lastOut < 1.5, '1.5 秒内拐回路面',
+     (lastOut < 0 ? '没回来' : lastOut.toFixed(2) + ' s（界外 ' + outFrames + ' 帧）'));
+  ok(Math.abs(S.lat) < 0.06, '8 秒后回到中线', (S.lat*100).toFixed(1) + ' cm');
+}
+
+{ // 一次过冲有多大：比「数零点穿越次数」有意义得多。
+   // 原来数穿越，阻尼振荡每衰减一次算一次，数出 4 次判失败 ——
+   // 可极差只有 0.00 cm，根本没有可见的来回弹。改成量超调幅度。
+  reset(0.8, 0, 20);
+  let hit = false, overshoot = 0;
+  sim(60*10, 1/60, () => {
+    if (!hit && S.lat <= 0) hit = true;          // 第一次穿过中线
+    if (hit) overshoot = Math.max(overshoot, Math.abs(S.lat));
+  });
+  ok(overshoot < 0.06, '第一次过线之后的超调 < 6 cm（看着是「一下掰回来」，不是来回弹）',
+     (overshoot*100).toFixed(1) + ' cm');
+}
+
+/* ═══ 3. 不振荡 ═══ */
+for (const spd of [6, 15, 24, 34]){
+  reset(0.5, 0, spd);
+  const trace = [];
+  sim(60*14, 1/60, () => trace.push(S.lat));
+  // 收敛之后不许再有来回摆：后 4 秒的极差必须很小
+  const tail = trace.slice(-240);
+  const range = Math.max(...tail) - Math.min(...tail);
+  ok(range < 0.06, spd + ' km/h：稳态不左右画圈（后 4 秒极差 < 6 cm）',
+     (range*100).toFixed(2) + ' cm');
+}
+/* ═══ 4. 手动模式完全不受影响 ═══ */
+{
+  // ⚠️ 每一段都从干净的零位起手。沿用上一段留下的 yaw 的话，
+  // 车是在一个大圆里转，「按左键 lat 反而变大」根本不是 bug，
+  // 是我把测试摆到了一个谁都测不出对错的姿态上。
+  reset(0, 0, 20, false);
+  keys.right = true;
+  sim(60, 1/60);
+  ok(S.lat > 0.1, '手动按右键 1 秒：车往右走', S.lat.toFixed(3));
+  ok(Math.abs(S.autoLat) < 1e-9, '手动时 autoLat 一个字节都不动', S.autoLat);
+  ok(CAP === '', '手动时不会冒出自动的台词');
+  keys.right = false;
+
+  reset(0, 0, 20, false);
+  keys.left = true;
+  sim(60, 1/60);
+  ok(S.lat < -0.1, '手动按左键 1 秒：车往左走', S.lat.toFixed(3));
+  keys.left = false;
+}
+{ // cruiseTick 就算被调用也不该直接动 S.lat（它只输出舵）
+  reset(0.3, 0, 20, false);
+  const latBefore = S.lat;
+  const cmd = cruiseTick(1/60);
+  ok(near(S.lat, latBefore, 1e-12), 'cruiseTick 不直接动 S.lat（只输出打方向量）');
+  ok(typeof cmd === 'number' && cmd >= -1 && cmd <= 1, '返回值是 −1..+1 的舵', cmd.toFixed(3));
+}
+
+/* ═══ 5. 避让：选边 ═══ */
+function avoidTest(z, wantSide, label){
+  reset(0, 0, 20);
+  RIDERS = [mkRider(1, z, 14, 14)];     // 同向 14 km/h，我们在 20，追得上
+  sim(60*6, 1/60);
+  ok(Math.sign(S.autoLat) === wantSide, label,
+     '它在 z=' + z + ' → autoLat=' + S.autoLat.toFixed(3));
+  ok(Math.abs(S.autoLat) > 0.3, label + '：真的让开了', S.autoLat.toFixed(3));
+  ok(Math.abs(S.autoLat) < LANE_HALF, label + '：让完还在自己道上', S.autoLat.toFixed(3));
+  return S.autoLat;
+}
+avoidTest( 0.40, -1, '车在右边 → 我们往左让');
+avoidTest(-0.40,  1, '车在左边 → 我们往右让');
+avoidTest( 0.00,  1, '车正在中线 → 按余量挑（平手取右）');
+
+{ // 让完之后横向要真的离得开，而不是「目标挪了、车没挪」。
+  // 扫一遍同向车可能出现的整个 z 范围（layoutRider 给的是 ±0.44），
+  // 每一档都要离得开碰撞半宽 —— 比「避让量 > 某个数」这种拍脑袋阈值可靠。
+  // ⚠️ 车必须**冻在够得着的地方**（dx=6，落在 9 m 触发窗内），
+  //   让它按真实速度跑的话 closing 只有 1.67 m/s，从 dx=25 出发 6 秒
+  //   也才走到 15 —— 压根没进过触发窗，整条扫测量的是「车没动」。
+  //   上一版就是这么写的，于是只有 z≈0 那两档报 0.000，看着像避让坏了。
+  // ⚠️ 量的是**最后 2 秒**，不是「第 90 帧之后」。
+  //   1.10/3.60 从 0 挪到 0.62 要 1.1 秒，早期那版增益 0.85 秒就到了，
+  //   于是「第 90 帧之后取最小」恰好落在车还在路上的时候，量出 0.577，
+  //   看着像让开得不够 —— 其实只是还没挪到位。并排那一刻看的是稳态。
+  let worstSep = 99, worstAt = 0;
+  for (let z = -0.44; z <= 0.4401; z += 0.04){
+    reset(0, 0, 20);
+    RIDERS = [mkRider(1, z, 6, 14)];
+    const N = 60*9;
+    let sep = 99;
+    sim(N, 1/60, (i) => { if (i > N - 120) sep = Math.min(sep, Math.abs(z - S.lat)); },
+        false);                                  // 冻结车流，测的是稳态
+    if (sep < worstSep){ worstSep = sep; worstAt = z; }
+  }
+  ok(worstSep > 0.38, '扫遍它可能出现的每个横向位置，稳态都离得开碰撞半宽 0.38',
+     '最窄 ' + worstSep.toFixed(3) + ' m（它在 z=' + worstAt.toFixed(2) + ' 时）');
+  ok(worstSep > AVOID_OFF*0.85, '而且余量不是刚好擦边', worstSep.toFixed(3) + ' / ' + AVOID_OFF);
+  ok(worstSep < AVOID_OFF + 0.44, '但也没有让到没必要让那么远', worstSep.toFixed(3));
+}
+{ // 让完 → 超过它 → 回中线。起点同样要落在触发窗内（dx=8 < 9）。
+  reset(0, 0, 20);
+  const r = mkRider(1, 0.40, 8, 14);
+  RIDERS = [r];
+  sim(60*3, 1/60);
+  const dodging = Math.abs(S.autoLat);
+  r.position.x = -20;                        // 假装已经超过去了
+  sim(60*4, 1/60);
+  ok(dodging > 0.3, '先真的让开过', dodging.toFixed(3));
+  ok(Math.abs(S.autoLat) < 0.05, '超过之后目标回中线', S.autoLat.toFixed(4));
+  ok(Math.abs(S.lat) < 0.75, '车也跟着回到车道里', S.lat.toFixed(3));
+}
+
+/* ═══ 6. 避让：不该让的情况 ═══ */
+{ // 对向车在左道，不该有任何反应
+  reset(0, 0, 20);
+  RIDERS = [mkRider(-1, -1.95, 30, 20)];
+  sim(60*4, 1/60);
+  ok(Math.abs(S.autoLat) < 0.02, '对向车（同向=否）完全不触发避让', S.autoLat.toFixed(4));
+  ok(Math.abs(S.lat) < 0.15, '车也没乱晃', S.lat.toFixed(3));
+}
+{ // 太远，不该动
+  reset(0, 0, 20);
+  RIDERS = [mkRider(1, 0.40, 120, 2)];       // 我们 20 它 2，差 18 km/h
+  sim(60*3, 1/60);
+  ok(Math.abs(S.autoLat) < 0.05, '120 m 外的那辆不触发', S.autoLat.toFixed(4));
+}
+{ // 并排/已经过去，不该动
+  reset(0, 0, 20);
+  RIDERS = [mkRider(1, 0.40, -6, 20)];
+  sim(60*3, 1/60);
+  ok(Math.abs(S.autoLat) < 0.05, '身后的那辆不触发', S.autoLat.toFixed(4));
+}
+{ // 我们比它慢，追不上 → 不该动
+  reset(0, 0, 10);
+  RIDERS = [mkRider(1, 0.40, 20, 24)];
+  sim(60*4, 1/60);
+  ok(Math.abs(S.autoLat) < 0.05, '比它慢（追不上）不触发', S.autoLat.toFixed(4));
+}
+{ // 横向本来就离得开 → 不该动
+  reset(0, 0, 20);
+  RIDERS = [mkRider(1, 0.90, 12, 14)];
+  sim(60*3, 1/60);
+  ok(Math.abs(S.autoLat) < 0.05, '已经在路边那辆不触发', S.autoLat.toFixed(4));
+}
+
+/* ═══ 7. 避让 + 循线同时在跑 ═══ */
+{ // 一边贴中线一边躲车：躲完还得回中线，不是躲到路肩上
+  reset(0, 0, 26);
+  const r = mkRider(1, 0.40, 8, 12);          // dx=8：closing 3.89 → 窗是 10.1 m，进得去
+  RIDERS = [r];
+  sim(60*2.2, 1/60);                          // 追近
+  const dodging = Math.abs(S.autoLat);
+  r.position.x = -30;
+  sim(60*6, 1/60);
+  ok(dodging > 0.3, '先躲开了', dodging.toFixed(3));
+  ok(Math.abs(S.autoLat) < 0.03, '目标回中线', S.autoLat.toFixed(4));
+  ok(Math.abs(S.lat) < 0.12, '车也回到中线附近（没有赖在路肩）', S.lat.toFixed(3));
+}
+{ // 避让也不能把车推出路面
+  reset(0, 0, 30);
+  RIDERS = [mkRider(1, 0.40, 15, 5)];
+  let worst = 0;
+  sim(60*10, 1/60, () => { worst = Math.max(worst, Math.abs(S.lat)); bounds(); });
+  ok(worst <= LANE_HALF + 0.01, '避让全程不越出车道', worst.toFixed(3));
+}
+{ // 极限环回归：躲**一辆**车不该在边界上反复触发/放行。
+  // 参照系跟着车自己动的时候，这里会抖出几十次（实测旧版 12 秒 16 次）。
+  // ⚠️ 车必须从 dx=8 起步：20 追 14 的 closing 只有 1.67 m/s，
+  //   从 dx=25 出发要 9.6 秒才进得了 9 m 的窗，而这段只跑 8 秒 ——
+  //   上一版就这么写的，测出「0 次切换」，看着像没抖，其实是压根没躲。
+  reset(0, 0, 20);
+  RIDERS = [mkRider(1, 0.44, 8, 14)];
+  let t1 = 0, prev = 0;
+  sim(60*8, 1/60, () => { if (S.autoSide !== prev){ t1++; prev = S.autoSide; } });
+  ok(t1 === 2, '躲一辆车：只该「进入让行」和「结束让行」两次切换', t1 + ' 次');
+  ok(Math.abs(S.autoLat) < 0.02, '超过去之后目标回中线', S.autoLat.toFixed(4));
+}
+{ // 连续两辆车分站左右：不能让车在两辆之间来回抽
+  // ⚠️ 只数**两个非零边之间的**切换。「结束让行」(→0) 不是换边，
+  //   把它算进去的话，一次正常的 a 让完 → b 让，会被数成 3 次。
+  reset(0, 0, 30);
+  const a = mkRider(1,  0.44, 25, 6);
+  const b = mkRider(1, -0.44, 60, 6);
+  RIDERS = [a, b];
+  let flips = 0, prevSide = 0;
+  sim(60*12, 1/60, () => {
+    if (S.autoSide !== 0 && S.autoSide !== prevSide){ flips++; prevSide = S.autoSide; }
+    if (S.autoSide === 0) prevSide = 0;
+  });
+  ok(flips <= 2, '前后两辆分站两边时，左右各让一次就够', flips + ' 次换边');
+  ok(Math.abs(S.lat) < 0.2, '两轮让完车还在车道里', (S.lat*100).toFixed(1) + ' cm');
+}
+
+/* ═══ 8. 收油 ═══ */
+{ // 贴太近时必须收油 —— 避让来不及也不该顶上去
+  reset(0, 0, 30);
+  S.target = 30;
+  RIDERS = [mkRider(1, 0.0, 3.0, 6)];
+  cruiseTick(1/60);
+  ok(S.target < 30, '正前方 3 m 有一辆车 → 收油', S.target.toFixed(2));
+}
+{ // 远处不该收油
+  reset(0, 0, 30);
+  S.target = 30;
+  RIDERS = [mkRider(1, 0.0, 20.0, 6)];
+  cruiseTick(1/60);
+  ok(S.target >= 30, '20 m 外那辆不收油', S.target.toFixed(2));
+}
+
+/* ═══ 9. 台词 ═══ */
+{ // 让车时会说一句，让人看得见它为什么在躲
+  // ⚠️ dx 必须在 9 m 触发窗内。上一版写 12 —— 20 追 14 的 closing 只有
+  // 1.67 m/s，窗是 max(9, 4.34)=9 m，第一帧就被挡在窗外，于是
+  // 「冒一句台词」永远 FAIL，而后面两条（不重复播 / 不多嘴）因为
+  // CAP 恒为空**恒过** —— 三条一起废掉，只看得出有一条红。
+  reset(0, 0, 20);
+  CAP = '';
+  RIDERS = [mkRider(1, 0.40, 8, 14)];
+  cruiseTick(1/60);
+  ok(CAP.length > 0, '开始避让时冒一句台词', CAP || '(空)');
+  ok(S.capT > 0, '并且占住字幕一小段时间', S.capT.toFixed(1));
+  const first = CAP;
+  CAP = '';
+  cruiseTick(1/60);                          // 同一辆，还在让
+  ok(CAP === '' && S.autoSide === -1, '同一辆不重复播（而且避让确实还在生效）',
+     CAP || '(空) side=' + S.autoSide);
+  clearRiders();
+  CAP = '';
+  cruiseTick(1/60);
+  ok(CAP === '', '让完了也不多嘴', CAP || '(空)');
+}
+
+/* ═══ 10. 反查：判据抓得住它该抓的 bug 吗 ═══
+   恒过的检查等于没有检查。三个**真出过**的故障各造一次，
+   要求对应判据确实会翻。 */
+{
+  // (a) KD_YAW 写成负数 = 阻尼变正反馈。判据必须能分辨这两种极性。
+  const y = 0.2;
+  const good = clamp(KP_LAT*0 + KD_YAW*y, -1, 1);
+  const badP = clamp(KP_LAT*0 - KD_YAW*y, -1, 1);
+  ok(good > 0 && badP < 0, '反查 a：yaw 偏了 steer 必须同号，判据能分辨极性',
+     'good ' + good.toFixed(2) + ' / 反了 ' + badP.toFixed(2));
+}
+{
+  // (b) 避让选边写反（roomR / roomL 互换）
+  const rz = 0.40, LANE_H = 0.975;
+  const goodSide = (LANE_H - (rz + 0.95)) >= ((rz - 0.95) + LANE_H) ? 1 : -1;
+  const badSide  = (LANE_H - (rz + 0.95)) <  ((rz - 0.95) + LANE_H) ? 1 : -1;
+  ok(goodSide === -1 && badSide === 1, '反查 b：车在右边时判据能分辨选边对错',
+     'good ' + goodSide + ' / 反了 ' + badSide);
+}
+{
+  // (c) 收敛判据必须真的能翻 —— 拿一个已知发散的增益跑一遍
+  const stable = (() => {
+    const save = S.lat, sy = S.yaw, ss = S.steer;
+    S.lat = 0.8; S.yaw = 0; S.steer = 0;
+    for (let i = 0; i < 60*6; i++){ const u = clamp(KP_LAT*(0 - S.lat) + KD_YAW*S.yaw, -1, 1);
+      physics(1/60, u); }
+    const r = Math.abs(S.lat);
+    S.lat = save; S.yaw = sy; S.steer = ss; return r;
+  })();
+  ok(stable < 0.2, '反查 c：正号增益确实收敛（判据不是恒过的）', stable.toFixed(3));
+  const diverged = (() => {
+    const save = S.lat, sy = S.yaw, ss = S.steer;
+    S.lat = 0.8; S.yaw = 0; S.steer = 0;
+    for (let i = 0; i < 60*6; i++){ const u = clamp(KP_LAT*(0 - S.lat) - KD_YAW*S.yaw, -1, 1);
+      physics(1/60, u); }
+    const r = Math.abs(S.lat);
+    S.lat = save; S.yaw = sy; S.steer = ss; return r;
+  })();
+  ok(diverged > stable * 3, '反查 c：反号增益会发散，判据能分辨', diverged.toFixed(3));
+}
+
+{
+  // (d) 参照系 bug 的反查。同一套物理、同一条车流，只换释放判据的参照系：
+  //     「拿车**现在**的位置当参照」这一版必须真的抖出极限环，
+  //     「拿中线当参照」这一版必须不抖。
+  //     恒过的反查等于没有反查，所以这里要的是**两版读数确实不同**。
+  const flipUnder = (refIsLat) => {
+    reset(0, 0, 20);
+    const r = mkRider(1, 0.44, 8, 14);          // 起步就在触发窗内
+    RIDERS = [r];
+    let side = 0, autoLat = 0, changes = 0;
+    for (let i = 0; i < 60*8; i++){
+      const dx = r.position.x;
+      let s = 0;
+      if (dx >= -1 && dx <= 9 && Math.abs(r.position.z) <= LANE_HALF){
+        const a = refIsLat ? Math.abs(r.position.z - S.lat)   : Math.abs(r.position.z);
+        const b = refIsLat ? Math.abs(r.position.z - autoLat) + 0.30
+                           : Math.abs(r.position.z - autoLat);
+        if (!(a > AVOID_HIT && b > AVOID_HIT)){
+          const roomR = LANE_HALF - (r.position.z + 0.95);
+          const roomL = (r.position.z - 0.95) + LANE_HALF;
+          s = roomR >= roomL ? 1 : -1;
+        }
+      }
+      if (s !== side){ changes++; side = s; }
+      const want = s * AVOID_OFF;
+      autoLat += (want - autoLat) * (1 - Math.pow(0.05, 1/60));
+      S.steerIn = clamp(KP_LAT*(autoLat - S.lat) + KD_YAW*S.yaw, -1, 1);
+      physics(1/60, S.steerIn);
+      moveRiders(S.speed/3.6, 1/60);
+    }
+    return changes;
+  };
+  const flaky = flipUnder(true), steady = flipUnder(false);
+  ok(flaky > 6, '反查 d：参照系跟着车动的那一版会抖出极限环', flaky + ' 次切换');
+  ok(steady <= 3, '反查 d：固定参照系那一版不抖', steady + ' 次切换');
+  ok(flaky > steady * 2, '反查 d：两版读数确实分得开（判据不是恒过的）',
+     flaky + ' vs ' + steady);
+}
+
+/* ═══ 11. 长时段集成回归：真实车流 + 真实回收，跑 180 秒 ═══
+   前面那些工况都是我自己摆的。这一段用 app 里真正的 layoutRider
+   分布（同向 z = LANE_R ± 0.44、对向 z = LANE_L ± 0.36，回收线
+   同向 [-30, 165]、对向 [-45, 280]）和真正的碰撞判据（±0.82 / ±0.38），
+   跑三分钟量结果 —— 这才代表「成片里跑起来是什么样」。
+   以前是靠一个浏览器探针测的，结果那个标签页反复超时跑不起来；
+   放进回归里反而更可靠，每次 _checkall 都会重跑。 */
+{
+  const SEED = 20260930;
+  _seed = SEED;
+  reset(0.30, -0.22, 24);                 // 摆歪了起步，看它自己收拾
+  RIDERS = [];
+  for (let i = 0; i < 4; i++) RIDERS.push(mkRider( 1, 0, 30 + i*23, 6 + i*2.5));
+  for (let i = 0; i < 3; i++) RIDERS.push(mkRider(-1, 0, 60 + i*40, 16 + i*3));
+  for (const r of RIDERS) layoutRider(r, true);
+
+  const DT = 1/60, SECS = 180, NF = SECS*60;
+  let maxAbs = 0, maxYaw = 0, hits = 0, flips = 0, prevSide = 0, prevHitT = 0;
+  let minGap = 99, closeFrames = 0, offFrames = 0, sideHist = {};
+  const flipT = [];
+  for (let i = 0; i < NF; i++){
+    S.steerIn = S.cruise ? cruiseTick(DT) : 0;
+    physics(DT, S.steerIn);
+    // 真实车流推进 + 真实回收线
+    for (const r of RIDERS){
+      const u = r.userData, v = S.speed/3.6;
+      if (u.dir > 0){
+        r.position.x += (u.vr/3.6 - v) * DT;
+        if (r.position.x < -30 || r.position.x > 165) layoutRider(r, false);
+      } else {
+        r.position.x -= (u.vr/3.6 + v) * DT;
+        if (r.position.x < -45 || r.position.x > 280) layoutRider(r, false);
+      }
+      if (u.dir <= 0) continue;
+      const dx = r.position.x;
+      if (dx < -0.82 || dx > 0.82) continue;
+      closeFrames++;
+      const gap = Math.abs(r.position.z - S.lat);
+      if (gap < minGap) minGap = gap;
+    }
+    // 真实碰撞判据（不含互推，只是量有没有真的撞上）
+    if (S.hitT > 0.5 && prevHitT <= 0) hits++;
+    prevHitT = S.hitT;
+    if (S.autoSide !== 0 && S.autoSide !== prevSide){ flips++; prevSide = S.autoSide; flipT.push(i*DT); }
+    else if (S.autoSide === 0) prevSide = 0;
+    if (S.offRoad > 0.5) offFrames++;
+    if (S.autoSide !== 0) sideHist[S.autoSide] = (sideHist[S.autoSide] || 0) + 1;
+    maxAbs = Math.max(maxAbs, Math.abs(S.lat));
+    maxYaw = Math.max(maxYaw, Math.abs(S.yaw));
+  }
+  // 「不许来回抽」量的是**密度**，不是总数：4 辆车循环回收，
+  // 一次会车换一次边本来就该发生，180 秒十几次很正常；
+  // 抽是挤在一起左右交替。所以看任意 4 秒窗口里最多切几次。
+  let burst = 0, at = 0;
+  for (let a = 0; a < flipT.length; a++){
+    let c = 0;
+    for (let b = a; b < flipT.length && flipT[b] - flipT[a] < 4; b++) c++;
+    if (c > burst){ burst = c; at = flipT[a]; }
+  }
+  ok(hits === 0, SEED + '：真实车流 180 秒，一次都没撞上', hits + ' 次');
+  ok(maxAbs <= LANE_HALF + 0.01, SEED + '：横向峰值没出路（车道半宽 ' + LANE_HALF + '）',
+     maxAbs.toFixed(3) + ' m');
+  ok(offFrames === 0, SEED + '：全程没压草', (offFrames*DT).toFixed(2) + ' s');
+  ok(maxYaw < 0.35, SEED + '：车头没歪到失控', maxYaw.toFixed(3) + ' rad');
+  ok(minGap > 0.38, SEED + '：并排时横向离得开 0.38',
+     (minGap === 99 ? '没并排过' : minGap.toFixed(3) + ' m（并排 ' + closeFrames + ' 帧）'));
+  ok(flips <= 24, SEED + '：三分钟换边总数合理（4 辆车循环，一次会车一次）', flips + ' 次');
+  ok(burst <= 3, SEED + '：任意 4 秒窗口内换边不超过 3 次（不许挤在一起左右抽）',
+     '最密 ' + burst + ' 次 @' + at.toFixed(1) + 's');
+  ok(Math.abs(S.lat) < 0.30, SEED + '：终态还在车道里', (S.lat*100).toFixed(1) + ' cm');
+  // 真的躲过车了吗？没有并排帧就说明压根没遇到同向车，这条判据就是恒过的
+  ok(closeFrames > 30 && (sideHist[-1] || 0) > 30 && (sideHist[1] || 0) > 30,
+     SEED + '：左右两个方向都真的让过（不是只躲了一边）',
+     '并排 ' + closeFrames + ' 帧  左让 ' + (sideHist[-1] || 0) + '  右让 ' + (sideHist[1] || 0));
+}
+
+/* ---- 输出 ---- */
+const bad = L.filter(x => !x[0]);
+let h = '<h3>' + (L.length - bad.length) + ' / ' + L.length + ' 通过</h3>';
+if (bad.length){
+  h += '<div style="color:#ff6b6b;margin:6px 0 10px">下面 ' + bad.length + ' 条没过：</div>';
+  for (const [c, n, d] of bad) h += '<div class="bad">FAIL  ' + n + (d ? '   [' + d + ']' : '') + '</div>';
+  h += '<hr>';
+}
+for (const [c, n, d] of L)
+  h += '<div class="' + (c ? 'ok' : 'bad') + '">' + (c ? 'PASS  ' : 'FAIL  ') + n + (d ? '   [' + d + ']' : '') + '</div>';
+document.getElementById('o').innerHTML = h;
+document.title = (bad.length ? 'FAIL ' : 'PASS ') + (L.length - bad.length) + '/' + L.length;
+</script></body></html>

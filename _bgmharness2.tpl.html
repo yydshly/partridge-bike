@@ -1,0 +1,165 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>bgm harness v2</title>
+<style>body{background:#0b0e13;color:#e9eef6;font:13px/1.6 Consolas,monospace;padding:14px;white-space:pre}
+.ok{color:#4ecdc4}.bad{color:#ff6b6b}</style></head><body><div id="o">running…</div>
+<script>
+/* ---- stubs ---- */
+const DOM = {};
+const $ = id => (DOM[id] ||= {textContent:'', classList:{_s:new Set(),toggle(c,on){on?this._s.add(c):this._s.delete(c)},has(c){return this._s.has(c)}}, disabled:false, addEventListener(){}, value:0});
+const made = [];
+class FakeAudio {
+  constructor(){ this.loop=false; this.preload=''; this.volume=1; this.src='';
+               this.paused=true; this._p=0; this.duration=180; this.currentTime=0; made.push(this); }
+  play(){ this.paused=false; this._p++; return Promise.resolve(); }
+  pause(){ this.paused=true; }
+}
+const Audio = FakeAudio;
+const created = [];
+const _co = URL.createObjectURL.bind(URL);
+URL.createObjectURL = b => { const u = 'blob:fake/' + created.length; created.push(b); return u; };
+
+const MOOD = { lamps:false };
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const audioUnlock = () => {};
+// analyseTrack() 会 fetch(blobURL).arrayBuffer()。这里给它一个假的 ArrayBuffer，
+// decodeAudioData 那边再用合成包络顶上去。
+const fetch = () => Promise.resolve({ arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) });
+
+/* fake AudioContext: decodeAudioData returns an AudioBuffer-like whose channel
+   data is a synthetic envelope — loud "sung" bursts separated by silence, with
+   NLYRICS bursts. This is exactly the shape lyricSegments() is built to find. */
+const NLYRICS = 8;
+function synthBuf(){
+  const sr = 44100, dur = 180, n = sr*dur;
+  const ch = new Float32Array(n);
+  // 8 vocal phrases, evenly spaced, each 2s loud with 1.5s silence around
+  for (let k = 0; k < NLYRICS; k++){
+    const s0 = Math.floor((k*(dur/NLYRICS) + 3)*sr), len = Math.floor(2*sr);
+    for (let i = 0; i < len; i++) ch[s0+i] = 0.4;   // constant loud RMS
+  }
+  // a low bed so median isn't 0
+  for (let i = 0; i < n; i++) ch[i] += 0.01;
+  return { sampleRate: sr, getChannelData: () => ch };
+}
+const AU = { ready:true, on:true, ctx:{ decodeAudioData: buf => Promise.resolve(synthBuf()) } };
+
+/* ---- real player code ---- */
+/*__BGM__*/
+
+/* ---- checks ---- */
+const L = [];
+let bad = 0;
+const ok = (cond, msg) => { L.push((cond?'  PASS  ':'  FAIL  ') + msg); if(!cond) bad++; };
+
+bgmBuild();
+L.push('build: ' + made.length + ' 个 <audio>, ' + created.length + ' 个 Blob URL');
+L.push('');
+ok(BGM.ready === true, 'bgmBuild() 把 ready 置为 true');
+ok(made.length === 8, '建出 8 条音轨（实际 ' + made.length + '）');
+ok(made.every(a => a.loop === true), '每条都开了循环');
+ok(made.every(a => a.src && a.src.indexOf('blob:') === 0), '每条 src 都是 blob URL');
+ok(made.every(a => a.volume === 0), '每条初始音量 0（要靠淡入，不是一上来就炸）');
+ok(DOM.hBgm.textContent.indexOf('去看晚霞') === 0, '初始曲名 = 「' + DOM.hBgm.textContent + '」');
+
+L.push('');
+L.push('曲名 / 人声标记（8 首）：');
+const TITLES = ['去看晚霞','风把路吹长','一路绿灯','暮色里','慢下来','风穿过头','路很安静','一直往前'];
+const VOCAL  = [true,true,false,false,true,true,true,true];
+const NLYR   = [12,12,0,0,8,8,8,8];
+for (let i = 0; i < 8; i++){
+  const tr = BGM_TRACKS[i];
+  ok(tr.title === TITLES[i], '#' + i + ' title = ' + tr.title + (tr.title===TITLES[i]?' ✓':' 期望 '+TITLES[i]));
+  ok(tr.vocal === VOCAL[i], '#' + i + ' vocal = ' + tr.vocal);
+  const nl = tr.lyrics ? tr.lyrics.length : 0;
+  ok(nl === NLYR[i], '#' + i + ' ' + tr.title + ' 歌词 ' + nl + ' 行' + (nl===NLYR[i]?' ✓':' 期望 '+NLYR[i]));
+  ok(tr.lyrics && tr.lyrics.every(l => typeof l === 'string' && l.length > 0),
+     '#' + i + ' 每行都是非空字符串');
+}
+
+L.push('');
+L.push('base64 还原校验 —— 这里只查「Blob 有多长」，逐字节比对由 PowerShell 单独做：');
+const EXPECT = __EXPECT__;
+created.forEach((b, i) => {
+  const got = b.size, want = EXPECT[i];
+  ok(got === want, '#' + i + '  ' + BGM_TRACKS[i].title + '  ' + got.toLocaleString() + ' / ' + want.toLocaleString() + ' 字节'
+     + (got === want ? '  一致' : '  差 ' + (want-got)));
+});
+
+L.push('');
+L.push('切歌：');
+bgmStep(1);
+ok(BGM.i === 1, '下一首 → i=1（实际 ' + BGM.i + '）');
+ok(DOM.hBgm.textContent.indexOf('风把路吹长') === 0, '曲名 = 「' + DOM.hBgm.textContent + '」');
+for (let k = 0; k < 7; k++) bgmStep(1);
+ok(BGM.i === 0, '一路切完 8 首 → 回绕到 0（实际 ' + BGM.i + '）');
+ok(made.filter(a => !a.paused).length === 1,
+   '切歌后恰好 1 轨在响（实际 ' + made.filter(a => !a.paused).length + ' 轨）');
+ok(!made[BGM.i].paused, '在响的那一轨正是当前曲 #' + BGM.i);
+
+L.push('');
+L.push('音量渐变：');
+BGM.cur = 0;
+for (let k = 0; k < 200; k++) bgmTick(1/60);
+const dayV = BGM.el.volume;
+ok(dayV > 0.40 && dayV < 0.52, '白天稳定在 ' + dayV.toFixed(3) + '（用户音量 0.50）');
+MOOD.lamps = true;
+for (let k = 0; k < 200; k++) bgmTick(1/60);
+const nightV = BGM.el.volume;
+ok(nightV < dayV - 0.10, '夜晚退到 ' + nightV.toFixed(3) + '（比白天低 ' + ((1-nightV/dayV)*100).toFixed(0) + '%）');
+MOOD.lamps = false; AU.on = false;
+for (let k = 0; k < 200; k++) bgmTick(1/60);
+ok(BGM.el.volume < 0.01, '总静音 → 音量 ' + BGM.el.volume.toFixed(4) + '（渐到 0）');
+AU.on = true;
+
+L.push('');
+L.push('歌词时间轴引擎（注入 8 段合成人声 / 首曲 12 行 → 均匀取样）：');
+// trigger analysis on track 0 (12 lyrics) and wait a beat for the promise chain
+bgmPlay();
+// 不要用 setTimeout —— 标签页在后台时定时器被冻结，这段永远不执行，
+// 页面会一直停在「running…」。改用微任务：analyseTrack 那条链有三四跳，
+// 先空转十几下把时间戳算出来，再跑检查。
+let ticks = 0;
+(function spin(){
+  if (ticks++ < 20) { Promise.resolve().then(spin); return; }
+  runChecks();
+})();
+function runChecks(){
+  const tr = BGM_TRACKS[0];
+  ok(tr.times && tr.times.length === 12, '首曲算出 12 个时间点（实际 ' + (tr.times ? tr.times.length : 'null') + '）');
+  ok(tr.times && tr.times.every((t, i) => t >= 0 && (i === 0 || t > tr.times[i-1])),
+     '时间点非负且严格递增');
+  const span = tr.times[11] - tr.times[0];
+  ok(span > 60, '首句到末句跨 ' + span.toFixed(0) + 's（够长，不会挤成一坨）');
+
+  L.push('');
+  L.push('字幕显示（bgmTick 挑行）：');
+  // move currentTime into the middle and see if a line shows
+  made[BGM.i].currentTime = tr.times[5] + 0.1;
+  BGM.shown = '__';
+  bgmTick(1/60);
+  const want5 = tr.lyrics[5];
+  ok(DOM.lyric.textContent === want5, 't 落在第 6 句 → 显示「' + DOM.lyric.textContent + '」');
+  ok(DOM.lyric.classList.has('on'), '有字时 .on 打开（淡入显示）');
+  // before the first timepoint → no line yet
+  made[BGM.i].currentTime = 0;
+  BGM.shown = '__';
+  bgmTick(1/60);
+  ok(DOM.lyric.classList.has('on') === false, '前奏段（前奏没到句点）不显示字');
+
+  L.push('');
+  L.push('切歌时字幕重置 + 器乐不显示字幕：');
+  bgmStep(1);   // to track 1
+  ok(BGM.shown === '__' || DOM.lyric.textContent === '', '切歌瞬间字幕被清掉（不会留着上一首的词）');
+  // instrumental track 3
+  bgmStep(2);
+  ok(BGM.i === 3, '切到器乐曲 #' + BGM.i + '（' + BGM_TRACKS[3].title + '）');
+  BGM_TRACKS[3].times = [1,2,3];       // even if it had times, no lyrics → must not show
+  made[BGM.i].currentTime = 2.5; BGM.shown='__';
+  bgmTick(1/60);
+  ok(!BGM_TRACKS[3].lyrics.length && DOM.lyric.classList.has('on') === false,
+     '器乐曲即使有时间点也不显示字幕');
+
+  L.push('');
+  L.push(bad === 0 ? '全部通过 ✓' : bad + ' 项失败 ✗');
+  document.getElementById('o').textContent = L.join('\n');
+}
+</script></body></html>

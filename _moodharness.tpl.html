@@ -1,0 +1,582 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>mood harness</title>
+<style>body{background:#0b0e13;color:#e9eef6;font:13px/1.6 Consolas,monospace;padding:14px;white-space:pre}
+.ok{color:#4ecdc4}.bad{color:#ff6b6b}h3{color:#ffd166;margin:14px 0 4px}</style></head><body><div id="o">running…</div>
+<script>
+/* ── 替身 ─────────────────────────────────────────────────────
+   这里没有真 THREE，只给几何/材质一层够用的壳：真代码要的是
+   new BufferAttribute(数组,3) 能挂到 geometry 上，position.needsUpdate
+   能被写，以及 scene.add 不会炸。断言要盯的是**顶点数值**和**循环边界**，
+   那些跟真渲染无关，所以壳得足够薄。
+
+   ⚠️ 每一项都得写成 `function(){}`：对象字面量里的方法简写和箭头函数
+      **都不可 new**，写完看着没问题，真跑到 new THREE.PlaneGeometry 才炸。
+   ⚠️ 材质上还得挂一个带 setHex/getHex 的 color：真代码的 applyWeather 会
+      roadFx.material.color.setHex(...)，而 SNOWY 那行要 color.getHex()
+      把原色记下来 —— 少一个就 TypeError，getHex 少了就记不住原色。 */
+const stubColor = () => ({ v: 0xffffff, setHex(h){ this.v = h; }, getHex(){ return this.v; } });
+const THREE = {
+  RepeatWrapping: 1000,
+  BufferGeometry: function(){ this.attributes = {}; this.setAttribute = (n,a) => { this.attributes[n] = a; }; },
+  BufferAttribute: function(array, itemSize){ this.array = array; this.itemSize = itemSize; this.needsUpdate = false; },
+  LineBasicMaterial: function(o){ Object.assign(this, o); this.color = stubColor(); },
+  PointsMaterial: function(o){ Object.assign(this, o); this.color = stubColor(); },
+  LineSegments: function(g, m){ this.geometry = g; this.material = m; },
+  Points: function(g, m){ this.geometry = g; this.material = m; },
+  PlaneGeometry: function(w, h){ this.params = [w, h]; },
+  MeshStandardMaterial: function(o){ Object.assign(this, o); this.color = stubColor(); },
+  Mesh: function(g, m){
+    this.geometry = g; this.material = m;
+    // 真 Mesh 上这三个是构造时就有的，真代码会直接 roadFx.rotation.x = …
+    this.rotation = { x:0, y:0, z:0 };
+    this.position = { x:0, y:0, z:0, set(a,b,c){ this.x=a; this.y=b; this.z=c; } };
+    this.renderOrder = 0; this.visible = true;
+  }
+};
+const scene = { add(){} };
+const puffTex = { __stub:true };
+/* frostTex 是真代码用 cvs() 现场画的；harness 里没有 canvas，给个空壳就行 */
+const cvs = () => ({ wrapS:0, wrapT:0, repeat:{ set(){} } });
+
+/* M 替身：键名由 _mkmood.ps1 从**真的**材质表里抠出来注入 ——
+   自己照着 SNOWY 表列一遍就成了循环论证（表里有几个键，替身就有几个键，
+   少写一个照样过）。底色故意给成互不相同的深浅，才验得出「染白比例不同」。 */
+const M = {};
+for (const k of [/*__MKEYS__*/]){
+  let h = 0;
+  for (let i=0;i<k.length;i++) h = (h*31 + k.charCodeAt(i)) & 0xffffff;   // 稳定的伪随机底色
+  M[k] = { color: stubColor(), userData:{} };
+  M[k].color.setHex(0x202020 + (h % 0x404040));
+}
+
+/* 场景常量，值必须和 _app3d.html 里一样 */
+const GROUND_LEN = 420, GROUND_W = 460, ROAD_W = 3.9;
+const LANE = ROAD_W/4;
+const S = { tSec: 0 };
+
+/* 地面/路面替身：把 setHex 记下来，才能断言「雪天到底把地染白了多少」 */
+const groundMat = { color: stubColor() };
+const fieldOverlay = { material: { color: stubColor() } };
+const roadMesh = { material: { color: stubColor() } };
+
+/* 面板按钮替身：把 classList.toggle 全部录下来，才能查「高亮的和生效的是不是同一档」。
+   ⚠️ 真代码调的是 toggle('on', 布尔) —— **两个参数**。只接一个的话
+      'on' 这个字符串恒为真，于是七盏灯会「全部点亮」，
+      看起来像按钮同步坏了，其实是桩把 force 参数吃掉了。 */
+let TOGGLES = [];
+const $ = id => ({ classList: { toggle(cls, on){ TOGGLES.push([id, cls, !!on]); } } });
+
+/* paintBirdBtn 桩：applyWeather 末尾会调它（2026-09-30 第二轮修的：雨雪天不叫，
+   原因得写在按钮上）。这里不重复验它的文案 —— 那是 _uistate.html 的活，
+   但**必须记录它被调过**：以前压根没这个桩，页面一打开就抛
+   `ReferenceError: paintBirdBtn is not defined`，整页 448 条断言一条没跑，
+   而生成器照样在「全绿」里（lint 报了、退出码没往外传）。
+   顺带把「换了天气会刷新鸟鸣按钮的说明」也变成一条真断言。*/
+let BIRD_PAINT = 0;
+function paintBirdBtn(){ BIRD_PAINT++; }
+
+let seed = 20260929;
+const rnd = () => (seed = (seed*1664525 + 1013904223) >>> 0) / 4294967296;
+
+/* ---- 真实代码，从 _app3d.html 原样切出来 ---- */
+/*__MOOD__*/
+
+/* ---- 断言 ---- */
+const L = [];
+const ok = (c, n, d) => L.push([!!c, n, d === undefined ? '' : d]);
+const near = (a, b, e) => Math.abs(a - b) <= (e === undefined ? 1e-9 : e);
+const hexOf = h => typeof h === 'number' ? h : parseInt(String(h).slice(1), 16);
+const lum = h => { h = hexOf(h); return ((h>>16&255)*0.299 + (h>>8&255)*0.587 + (h&255)*0.114); };
+/* 染色的真实效果是**乘**在贴图上的，所以该看三通道相对 255 的平均倍率，
+   而不是 tint 自己的亮度 —— tint 亮不亮和「画面变暗多少」是两回事。
+   （早先拿 lum 去判「雨把地压暗了」，压出来是 173 > 阈值 150，判失败，
+   其实那一帧的乘数只有 0.67，本来就是对的。量错指标比阈值定错更难发现。） */
+const mul = h => { h = hexOf(h); return ((h>>16&255) + (h>>8&255) + (h&255)) / (3*255); };
+/* 路面最终被压多暗 = 染色乘数 × 盖面（半透明，乘上「盖完还剩多少」）。
+   只看染色那一层是不够的：把染色减半之后盖面接手了，单独看染色会以为
+   路面没变暗。必须定义在第一个用到它的断言**之前**，否则 TDZ。 */
+const roadEff = () => mul(roadMesh.material.color.v) *
+  (1 - roadFx.material.opacity * (1 - mul(roadFx.material.color.v)));
+
+const TKS = Object.keys(TIMES), WKS = Object.keys(WEATHER);
+const TIME_FIELDS = ['fog','fogNear','fogFar','hemiSky','hemiGround','hemiI',
+  'dirCol','dirI','cloud','cloudOpacity','hill','hillFar','stars','lamps','bikeLight','exposure'];
+
+/* ═══ 1. 表结构 ═══ */
+ok(TKS.length === 3 && TKS.includes('day') && TKS.includes('dusk') && TKS.includes('night'),
+  'TIMES = 白天/黄昏/夜晚 三档', TKS.join(','));
+ok(WKS.length === 4 && ['clear','rain','snow','fog'].every(k => WKS.includes(k)),
+  'WEATHER = 晴/雨/雪/雾 四档', WKS.join(','));
+for (const k of TKS){
+  const miss = TIME_FIELDS.filter(f => TIMES[k][f] === undefined);
+  ok(miss.length === 0, 'TIMES.' + k + ' 字段齐全', miss.join(','));
+  ok(Array.isArray(TIMES[k].sky) && TIMES[k].sky.length === 4, 'TIMES.' + k + '.sky 是 4 段');
+  ok(/^#[0-9a-f]{6}$/i.test(TIMES[k].sky[0]), 'TIMES.' + k + '.sky 是合法颜色串', TIMES[k].sky[0]);
+  ok(typeof TIMES[k].label === 'string' && TIMES[k].label.length > 0, 'TIMES.' + k + ' 有 label');
+}
+ok(WEATHER.clear.k === 0, '晴的 k = 0（天气是彻底的空操作）', 'k=' + WEATHER.clear.k);
+for (const k of WKS){
+  ok(WEATHER[k].label && WEATHER[k].label.length > 0, 'WEATHER.' + k + ' 有 label');
+  ok(WEATHER[k].sky === undefined || typeof WEATHER[k].sky === 'number', 'WEATHER.' + k + '.sky 是数字色');
+}
+ok(WEATHER.clear.sky === undefined && WEATHER.clear.fog === undefined,
+  '晴一张覆盖字段都不写（改了时段也不会被它动）');
+
+/* ═══ 2. 晴 = 原样（这条挂了说明天气轴污染了晴天，必须当 P0）═══ */
+for (const k of TKS){
+  const m = composeMood(k, 'clear'), T = TIMES[k];
+  const diff = TIME_FIELDS.filter(f => typeof T[f] === 'number' && m[f] !== T[f]);
+  ok(diff.length === 0, 'composeMood(' + k + ',clear) 数值逐位等于 TIMES.' + k, diff.join(','));
+  ok(m.sky.length === 4 && m.sky.every((c,i) => c.toLowerCase() === T.sky[i].toLowerCase()),
+    'composeMood(' + k + ',clear).sky 与原色一致', m.sky.join(' '));
+  ok(m.lamps === T.lamps && m.stars === T.stars, 'composeMood(' + k + ',clear) 灯/星不变');
+  ok(m.rain === 0 && m.snow === 0 && m.wet === 0, 'composeMood(' + k + ',clear) 零粒子零湿地');
+  ok(m.groundK === 0 && m.roadK === 0, 'composeMood(' + k + ',clear) 地面零色偏');
+}
+
+/* ═══ 3. 正交性 ═══ */
+let n = 0;
+for (const tk of TKS) for (const wk of WKS){
+  const m = composeMood(tk, wk);
+  ok(typeof m.label === 'string' && m.label.includes('·'), '组合 ' + tk + '+' + wk + ' 能合成', m.label);
+  ok(Number.isFinite(m.fog) && Number.isFinite(m.fogFar) && m.fogFar > m.fogNear,
+    '组合 ' + tk + '+' + wk + ' 雾是有效区间', m.fogNear + '..' + m.fogFar);
+  for (const f of MOOD_FIELDS.map(x => x[0]))
+    ok(Number.isFinite(m[f]), '组合 ' + tk + '+' + wk + ' 的 ' + f + ' 是有限数', m[f]);
+  ok(Array.isArray(m.dirPos) && m.dirPos.length === 3 && m.dirPos.every(Number.isFinite),
+    '组合 ' + tk + '+' + wk + ' 的 dirPos 完整');
+  n++;
+}
+ok(n === 12, '3×4 = 12 个组合全部合成过一遍', n + '');
+
+/* 天气轴的值不能被时段改动 —— 这是「正交」的字面意思 */
+for (const f of ['groundTint','groundK','roadTint','roadK','rain','snow','wet']){
+  const vals = TKS.map(tk => composeMood(tk, 'rain')[f]);
+  ok(vals.every(v => v === vals[0]), '换时段不改天气的 ' + f, vals.join(' / '));
+  const s = TKS.map(tk => composeMood(tk, 'snow')[f]);
+  ok(s.every(v => v === s[0]), '换时段不改天气的(雪) ' + f, s.join(' / '));
+}
+/* 时段轴的值不能被天气改动 */
+for (const f of ['stars','lamps','bikeLight']){
+  for (const tk of TKS){
+    const vals = WKS.map(wk => composeMood(tk, wk)[f]);
+    ok(vals.every(v => v === vals[0]), f + ' 不受天气影响（' + tk + '）', vals.join(' / '));
+  }
+}
+ok(composeMood('night','rain').lamps === true,  '雨夜路灯仍然亮（天气不能把灯关掉）');
+ok(composeMood('dusk','fog').lamps === true,   '雾天黄昏路灯仍然亮');
+ok(composeMood('day','fog').lamps === false,   '白天雾里不开路灯');
+ok(composeMood('day','rain').stars === false && composeMood('night','clear').stars === true,
+  '星星只听时段的');
+
+/* 非法键回退，不能抛 */
+ok(composeMood('nope','clear').tk === 'day',  '非法时段回退到白天');
+ok(composeMood('day','nope').wk === 'clear',  '非法天气回退到晴');
+
+/* ═══ 4. mixHex / 方向性 ═══ */
+ok(mixHex(0x102030, 0x405060, 0) === 0x102030, 'mixHex k=0 取左端');
+ok(mixHex(0x102030, 0x405060, 1) === 0x405060, 'mixHex k=1 取右端');
+ok(mixHex(0x000000, 0xffffff, 0.5) === 0x808080 ||
+   Math.abs(hexOf(mixHex(0x000000, 0xffffff, 0.5)) - 0x808080) <= 1, 'mixHex 半程在正中');
+{
+  const a = 0x0a1420, b = 0x405060, mid = mixHex(a, b, 0.5);
+  const mono = ((hexOf(mid)>>16&255) > (a>>16&255) && (hexOf(mid)>>16&255) < (b>>16&255))
+            && ((hexOf(mid)>>8&255)  > (a>>8&255)  && (hexOf(mid)>>8&255)  < (b>>8&255))
+            && ((hexOf(mid)&255)     > (a&255)     && (hexOf(mid)&255)     < (b&255));
+  ok(mono, 'mixHex 三通道都严格落在两端之间', '#' + mid.toString(16));
+}
+ok(hex6(0x0a0b0c) === '#0a0b0c', 'hex6 补齐六位', hex6(0x0a0b0c));
+ok(hex6(0xffffff) === '#ffffff', 'hex6 全白不缩写');
+
+/* k=1 时必须精确落在天气的目标值上（不是「差不多」）*/
+ok(composeMood('day','rain').fog === capHex(mixHex(TIMES.day.fog, WEATHER.rain.fog, 1), TIMES.day.fog),
+   '雨天雾色精确到表里的值（再被时段封顶）', '#' + hex6(composeMood('day','rain').fog));
+ok(composeMood('night','snow').fogFar === WEATHER.snow.fogFar, '雪夜 fogFar 精确到表里的值', composeMood('night','snow').fogFar);
+ok(composeMood('dusk','rain').cloudOpacity === WEATHER.rain.cloudOpacity, '雨云不透明度精确到表里的值');
+/* 灯的强度 = 该时段的基线 × (1 − dim) + floor。天气给不出绝对值。 */
+for (const wk of ['rain','snow','fog']){
+  const W = WEATHER[wk];
+  ok(W.hemiI === undefined && W.dirI === undefined,
+     '天气表里没有绝对的光强（只有 dim/floor）', wk);
+  for (const tk of TKS){
+    const m = composeMood(tk, wk);
+    ok(near(m.hemiI, TIMES[tk].hemiI*(1 - W.hemiDim) + W.hemiFloor, 1e-12),
+       tk + '+' + wk + ' 的半球光 = 时段基线压暗后加底光',
+       TIMES[tk].hemiI + ' → ' + m.hemiI.toFixed(3));
+    ok(near(m.dirI, TIMES[tk].dirI*(1 - W.dirDim), 1e-12),
+       tk + '+' + wk + ' 的太阳 = 时段基线压暗', TIMES[tk].dirI + ' → ' + m.dirI.toFixed(3));
+    ok(m.dirI < TIMES[tk].dirI, tk + '+' + wk + ' 太阳一定比该时段晴天弱');
+  }
+}
+/* ⚠️ hemiI 在夜里**不一定**比晴天低 —— 雪和雾都有 floor，那是故意的：
+   雪地反光强、夜里有雾时星星和灯光会散开，都比「晴朗的夜空」亮。
+   早先写「任何天气都一定更暗」，被 snow/fog 在夜里翻掉了两次。
+   真正该恒为真的只有「太阳一定更暗」：太阳被云挡住是无可争议的。 */
+
+/* ⚠️ 这一段是为「夜晚 + 雾渲染成白天」那个 bug 立的。
+   那次 12 个组合全部合成成功、所有数值字段都合法、按钮也全对，
+   只有画面是错的 —— 因为天气表给的是**绝对**光强，k=1 把时段整个盖掉了。
+   所以判据不查「每个字段合不合法」，只查一件事：
+   **任何天气都不能让夜晚亮过白天。** */
+for (const wk of WKS){
+  const n = composeMood('night', wk), d = composeMood('day', wk);
+  const dusk = composeMood('dusk', wk);
+  ok(n.hemiI < d.hemiI, wk + '：夜晚比白天暗', n.hemiI.toFixed(3) + ' < ' + d.hemiI.toFixed(3));
+  ok(n.dirI  < d.dirI,  wk + '：夜晚的太阳比白天弱', n.dirI.toFixed(3) + ' < ' + d.dirI.toFixed(3));
+  ok(lum(n.fog) <= lum(d.fog) + 1, wk + '：夜晚的雾不比白天的亮', lum(n.fog).toFixed(0) + ' ≤ ' + lum(d.fog).toFixed(0));
+  ok(n.sky.every((c,i) => lum(c) <= lum(d.sky[i]) + 1), wk + '：夜晚的天不比白天的亮',
+     n.sky[0] + ' vs ' + d.sky[0]);
+  ok(n.sky.every((c,i) => lum(c) <= lum(TIMES.night.sky[i]) + 1), wk + '：夜晚的天没被天气点亮',
+     n.sky[0] + ' ≤ ' + TIMES.night.sky[0]);
+  // 顺序还得对：白天里 雪 > 雾 > 雨（雪地最亮），夜晚里也一样
+  ok(composeMood('night','snow').hemiI > composeMood('night','fog').hemiI &&
+     composeMood('night','fog').hemiI  > composeMood('night','rain').hemiI,
+     wk + '：夜晚里 雪 > 雾 > 雨 的亮度顺序成立',
+     ['snow','fog','rain'].map(w => w + ' ' + composeMood('night',w).hemiI.toFixed(3)).join(' / '));
+  ok(composeMood('day','snow').hemiI > composeMood('day','fog').hemiI &&
+     composeMood('day','fog').hemiI  > composeMood('day','rain').hemiI,
+     wk + '：白天里 雪 > 雾 > 雨 的亮度顺序成立',
+     ['snow','fog','rain'].map(w => w + ' ' + composeMood('day',w).hemiI.toFixed(3)).join(' / '));
+  // 黄昏必须夹在白天和夜晚之间
+  ok(d.hemiI >= dusk.hemiI && dusk.hemiI >= n.hemiI,
+     wk + '：亮度顺序 白天 ≥ 黄昏 ≥ 夜晚',
+     [d.hemiI, dusk.hemiI, n.hemiI].map(x => x.toFixed(3)).join(' ≥ '));
+  // 雪山是唯一豁免封顶的：天和雾夜里必须暗，但雪山夜里该是全场最亮的东西
+  if (wk === 'snow'){
+    ok(mul(n.hill) > mul(composeMood('night','clear').hill),
+       '雪夜的雪山比晴夜亮（雪反光强，不能跟着封顶一起压死）',
+       mul(composeMood('night','clear').hill).toFixed(3) + ' → ' + mul(n.hill).toFixed(3));
+    ok(lum(n.fog) <= lum(composeMood('night','clear').fog) + 1,
+       '雪夜的雾仍然封顶（雪只抬山，不抬天）', lum(n.fog).toFixed(0));
+  } else {
+    ok(mul(n.hill) <= mul(composeMood('night','clear').hill) + 1e-6,
+       wk + '：夜晚的山不比自己高', wk);
+  }
+}
+
+/* capHex 本身 */
+ok(capHex(0xffffff, 0x101830) === 0x101830, 'capHex 全被盖住时取上限', '#' + capHex(0xffffff, 0x101830).toString(16));
+ok(capHex(0x101830, 0xffffff) === 0x101830, 'capHex 本来就暗时不动', '#' + capHex(0x101830, 0xffffff).toString(16));
+ok(capHex(0xa0b0c0, 0x0000ff) === 0x0000c0, 'capHex 是逐通道取小，不是取小的那一整边',
+   '#' + capHex(0xa0b0c0, 0x0000ff).toString(16));
+ok(capHex(capHex(0x778899, 0xaabbcc), 0xaabbcc) === capHex(0x778899, 0xaabbcc), 'capHex 幂等');
+
+/* 物理方向：雨更近更暗，雪更亮，雾最近 */
+const dc = composeMood('day','clear'), dr = composeMood('day','rain'),
+      ds = composeMood('day','snow'), df = composeMood('day','fog');
+ok(dr.fogFar < dc.fogFar, '雨天能见度比晴天短', dc.fogFar + ' → ' + dr.fogFar);
+ok(df.fogFar < dr.fogFar, '雾比雨还短', dr.fogFar + ' → ' + df.fogFar);
+ok(df.fogNear <= dr.fogNear, '雾贴脸的程度比雨狠', dr.fogNear + ' / ' + df.fogNear);
+/* 雪「亮」不在天光上，在地面上：雪地反照率是 0.8，草地是 0.2。
+   阴天的天光其实比晴天**弱**（天被云挡了），画面之所以变亮是因为地面翻白。
+   早先拿 hemiI 去验「雪地反光比晴天亮」，压出来 0.48 < 0.55 判失败 ——
+   该验的是地面反照率，不是天光强度。 */
+ok(ds.hemiI < dc.hemiI, '雪天阴天光比晴天弱（天被云挡了）', dc.hemiI + ' → ' + ds.hemiI);
+ok(ds.groundFxK > 0.8, '雪地靠盖面把反照率拉到接近 1', ds.groundFxK.toFixed(3));
+ok(dr.hemiI < dc.hemiI, '阴天比晴天暗', dc.hemiI + ' → ' + dr.hemiI);
+ok(dr.dirI < dc.dirI, '雨天太阳弱', dc.dirI + ' → ' + dr.dirI);
+ok(ds.groundK > dr.groundK && dr.groundK > 0, '雪盖得比雨狠', dr.groundK + ' / ' + ds.groundK);
+ok(hexOf(ds.groundTint) > hexOf(dr.groundTint) && lum(ds.groundTint) > lum(dr.groundTint),
+  '雪是亮的、雨是暗的', '#' + hexOf(ds.groundTint).toString(16) + ' / #' + hexOf(dr.groundTint).toString(16));
+ok(WEATHER.rain.wet > WEATHER.fog.wet && WEATHER.fog.wet > WEATHER.snow.wet,
+  '湿地程度 雨 > 雾 > 雪', [WEATHER.rain.wet, WEATHER.fog.wet, WEATHER.snow.wet].join(' '));
+ok(WEATHER.fog.skyFlat === true, '雾把天压成一个颜色（skyFlat）');
+ok(WEATHER.rain.skyFlat === undefined, '雨不压平天空（还要看得见云的层次）');
+
+/* 天色：权重是 1 → 0.55 的阶梯，逐段跟独立算出来的期望值比。
+   ⚠️ 别用「顶和底的绝对色差谁大」来判断压得多重 —— 白天天顶本来就暗
+      (#1a63a8)、地平线本来就亮 (#ffe4b4)，同样往灰里压，亮的那个
+      绝对差值必然更大，跟「哪一段压得更重」根本不是一回事。 */
+{
+  const T = TIMES.day, m = composeMood('day','rain');
+  for (let i = 0; i < 4; i++){
+    // 期望值要和真代码一样走一遍 capHex —— 忘了封顶就会得到
+    // 「#3d4854 vs #1a4854」这种差异，然后误判成合成有 bug
+    const want = hex6(capHex(mixHex(skyHex(T.sky[i]), WEATHER.rain.sky, 1 - i*0.15), skyHex(T.sky[i])));
+    ok(m.sky[i] === want, '雨天第 ' + i + ' 段天色 = 权重 ' + (1-i*0.15).toFixed(2) + ' 混合后按时段封顶',
+       m.sky[i] + ' vs ' + want);
+  }
+  for (let i = 0; i < 4; i++)
+    ok(lum(m.sky[i]) < lum(T.sky[i]), '雨天第 ' + i + ' 段天色比晴天暗',
+       lum(T.sky[i]).toFixed(0) + ' → ' + lum(m.sky[i]).toFixed(0));
+  // 雾的 skyFlat：天气只给一个色，四段各自被时段自己的那一段封顶，
+  // 所以结果**不再**是四段相同 —— 封顶那一步把它又变成渐变了。
+  const f = composeMood('day','fog');
+  ok(f.sky.every((c,i) => hexOf(c) === capHex(WEATHER.fog.sky, skyHex(T.sky[i]))),
+     '雾天四段天色 = 同一个雾色各自被时段封顶', f.sky.join(' '));
+  const fn = composeMood('night','fog');
+  ok(fn.sky.every((c,i) => hexOf(c) === capHex(WEATHER.fog.sky, skyHex(TIMES.night.sky[i]))),
+     '雾天夜里的天还是夜色（封顶把亮灰压回夜蓝）', fn.sky.join(' '));
+}
+ok(lum(composeMood('day','rain').sky[0]) < lum(dc.sky[0]), '雨天天顶确实变暗了');
+ok(composeMood('night','clear').sky[0] === TIMES.night.sky[0].toLowerCase() ||
+   composeMood('night','clear').sky[0].toLowerCase() === TIMES.night.sky[0].toLowerCase(),
+  '夜晚天色没被天气表碰过', composeMood('night','clear').sky[0]);
+/* 晴天绝不能是纯黑 —— skyHex/hex6 少写一个就正好是这个症状 */
+for (const k of TKS){
+  const m = composeMood(k, 'clear');
+  ok(m.sky.every(c => hexOf(c) !== 0), 'composeMood(' + k + ',clear) 天色不是纯黑', m.sky[0]);
+}
+
+/* 天色四段的顺序是「下 → 中上 → 地平线 → (没用)」：天空球 SphereGeometry
+   的 v=0 在**下**极点，渐变是倒着贴的。黄昏那一版 sky 写反了，
+   于是「天顶橙色、地平线紫色」，数字全对、只有画面是错的 ——
+   这条判据就是照着那次的症状立的。
+   ⚠️ 只比到 index 2：index 3 根本不会被 skyTexture 用到，拿它来比必然翻。 */
+for (const tk of TKS){
+  const s = TIMES[tk].sky.map(skyHex);
+  for (let i = 0; i < 2; i++)
+    ok(lum(s[i]) < lum(s[i+1]), tk + '：天色从下往地平线越来越亮',
+       s.slice(0,3).map(hex6).join(' → '));
+}
+{
+  const d = TIMES.dusk.sky.map(skyHex);
+  // ⚠️ 两个坑叠在一起：① `a>>8&255 > a>>16&255` 会解析成
+  //    `a>>8 & (255 > a>>16 & 255)` —— JS 里关系运算符比按位与优先级**高**，
+  //    结果是 0/1 不是布尔，三个断言全写错了，判据形同虚设。
+  //    ② `>>8 & 255` 取的是**绿**通道，蓝通道是 `h & 255`。
+  //    括号不能省，通道位也不能记混。
+  ok((d[1] & 255) > ((d[1]>>16) & 255), '黄昏：中上段是冷色（蓝 > 红）', hex6(d[1]));
+  ok(((d[2]>>16) & 255) > (d[2] & 255), '黄昏：地平线是暖色（红 > 蓝）', hex6(d[2]));
+  const dc = TIMES.dusk.dirCol;
+  ok(((dc>>16) & 255) > (dc & 255), '黄昏：太阳是暖的（红 > 蓝）', hex6(dc));
+  ok(TIMES.dusk.dirPos[1] < TIMES.day.dirPos[1],
+     '黄昏：太阳压得比白天低（影子拉长）', TIMES.dusk.dirPos[1] + ' vs ' + TIMES.day.dirPos[1]);
+  ok(TIMES.dusk.lamps === true && TIMES.day.lamps === false, '黄昏路灯已经亮了，白天还没亮');
+  ok(TIMES.dusk.bikeLight > 0 && TIMES.dusk.bikeLight < TIMES.night.bikeLight,
+     '黄昏车灯半亮、夜晚全亮', TIMES.dusk.bikeLight + ' / ' + TIMES.night.bikeLight);
+}
+
+/* ═══ 5. 粒子循环的数值不变式 ═══ */
+ok(RAIN.N === 1700 && RAIN.base.length === RAIN.N*3, '雨的粒子数与底表长度对得上', RAIN.N + '');
+ok(SNOW.N === 2200 && SNOW.base.length === SNOW.N*3, '雪的粒子数与底表长度对得上', SNOW.N + '');
+ok(RAIN.g.attributes.position.array.length === RAIN.N*6, '雨每滴 2 个顶点', RAIN.g.attributes.position.array.length + '');
+ok(SNOW.g.attributes.position.array.length === SNOW.N*3, '雪每片 1 个顶点');
+
+let worstY = 0, overX = 0, badLen = 0, notVert = 0, overXw = 0;
+// ⚠️ amount 必须先点亮再进循环：新建的粒子 amount=0，updateWeather 会直接跳过，
+//    不点亮的话 400 帧跑完底下两段断言验的是一片静止的空数组（恒过 = 没测）。
+RAIN.amount = 1; SNOW.amount = 1;
+for (let f = 0; f < 400; f++){
+  S.tSec += 1/60;
+  updateWeather(1/60, 36/3.6 * (1/60));       // 满速 36 km/h
+  if (RAIN.amount > 0.01){
+    const a = RAIN.g.attributes.position.array;
+    for (let i = 0; i < RAIN.N; i++){
+      const k6 = i*6;
+      const yTop = a[k6+1], yBot = a[k6+4];
+      worstY = Math.max(worstY, -yBot);
+      // ⚠️ 量「有没有跑出盒子」得算**超出多少**：x 本来就该在 [-WX, WX] 里，
+      //    所以 -x 最大能到 +WX（26），直接拿 -x 当「越界量」会把
+      //    正好贴在边界上的合法粒子判成越界 26 m。减掉 WX 才是超出量。
+      overX = Math.max(overX, -WX - a[k6], a[k6] - WX);
+      const Lg = yTop - yBot;
+      if (!(Lg > 0.2 && Lg < 2.0)) badLen++;
+      if (a[k6] !== a[k6+3] || a[k6+2] !== a[k6+5]) notVert++;   // 必须是竖的
+    }
+  }
+  if (SNOW.amount > 0.01){
+    const a = SNOW.g.attributes.position.array;
+    for (let i = 0; i < SNOW.N; i++){
+      const k3 = i*3;
+      worstY = Math.max(worstY, -a[k3+1]);
+      // 雪画出来是 base.x + 0.30·sin(…)，所以**两侧**都要留出 0.30 的摆幅。
+      // 只给上界留、下界不留的话，正好摆在最左边的合法雪片会被判成越界。
+      overXw = Math.max(overXw, -(WX + 0.31) - a[k3], a[k3] - (WX + 0.31));
+    }
+  }
+}
+ok(near(worstY, 0, 1e-6), '400 帧后没有一滴雨/一片雪掉到地面以下', '最深 ' + worstY.toFixed(4) + ' m');
+ok(overX <= 0, '雨没有跑出盒子', '超出 ' + overX.toFixed(4) + ' m');
+ok(overXw <= 0, '雪的横向摆动在设计的 0.30 m 之内', '超出 ' + overXw.toFixed(4) + ' m');
+ok(badLen === 0, '每根雨线段长度都在 0.2~2.0 m', badLen + ' 根不合格');
+ok(notVert === 0, '雨线段是竖的（两端 x/z 相同）', notVert + ' 根歪了');
+
+/* 盒子是有限的：跑满 400 帧 x 依然有界（不漏） */
+{
+  const xs = RAIN.base.filter((_, i) => i % 3 === 0);
+  ok(xs.every(x => x >= -WX - 1e-6 && x <= WX + 1e-6), '雨的底表 x 全程有界',
+     Math.min(...xs).toFixed(1) + ' .. ' + Math.max(...xs).toFixed(1));
+}
+
+/* 停雨要真的停：amount 归零后不可见，且不再改顶点 */
+{
+  RAIN.amount = 0; SNOW.amount = 0;
+  updateWeather(1/60, 5);
+  ok(RAIN.obj.visible === false, '雨停 → LineSegments 隐藏');
+  ok(SNOW.obj.visible === false, '雪停 → Points 隐藏');
+  const snap = RAIN.g.attributes.position.array.slice(0, 12);
+  updateWeather(1/60, 5);
+  const snap2 = RAIN.g.attributes.position.array.slice(0, 12);
+  ok(snap.every((v,i) => v === snap2[i]), '雨停之后不再白算顶点');
+}
+/* 开回来 */
+{
+  RAIN.amount = 1;
+  updateWeather(1/60, 5);
+  ok(RAIN.obj.visible === true, '雨重新开 → 可见');
+  ok(RAIN.mat.opacity > 0.3, '雨的可见度和雨量成正比', RAIN.mat.opacity.toFixed(3));
+  // 0.01 正好卡在 updateWeather 的阈值上（> 0.01 才进算），用 0.3 验比例，
+  // 免得拿边界值去测一条根本没打算连续的曲线
+  RAIN.amount = 0.3;
+  updateWeather(1/60, 5);
+  ok(near(RAIN.mat.opacity, 0.42*0.3, 1e-9), '雨量 0.3 → 可见度 0.126', RAIN.mat.opacity.toFixed(4));
+  RAIN.amount = 0;
+}
+
+/* ═══ 6. applyWeather：天气只碰它该碰的 ═══ */
+function apply(tk, wk){ TOGGLES = []; applyWeather(composeMood(tk, wk)); return TOGGLES; }
+{
+  BIRD_PAINT = 0;
+  apply('day','rain');
+  ok(BIRD_PAINT === 1, '换天气会刷新一次鸟鸣按钮的说明（雨/雪天不叫，得告诉用户为什么）',
+     'BIRD_PAINT=' + BIRD_PAINT);
+  // 反查：旧代码的 applyWeather 末尾**没有**那行 paintBirdBtn()，
+  // 它对这个计数器的唯一贡献就是 0。把计数退回「一次都没调过」的基线，
+  // 就是把旧行为装回去，同一条判据必须翻 false —— 否则第一条就是恒过的假绿。
+  BIRD_PAINT = 0;
+  ok(!(BIRD_PAINT === 1), '反查：装回旧代码（不刷新按钮）后，「刷新了一次」必须翻 false',
+     'BIRD_PAINT=' + BIRD_PAINT);
+}
+{
+  apply('day','clear');
+  ok(groundMat.color.v === 0xffffff, '晴：地面 color 是纯白（原样）', '#' + groundMat.color.v.toString(16));
+  ok(roadMesh.material.color.v === 0xffffff, '晴：路面 color 是纯白（原样）');
+  ok(mul(groundMat.color.v) === 1, '晴：地面乘数 1.0（贴图一点没动）', mul(groundMat.color.v).toFixed(3));
+  ok(roadEff() === 1, '晴：路面乘数 1.0（贴图一点没动）', roadEff().toFixed(3));
+  ok(roadFx.visible === false, '晴：路面盖面不可见');
+  ok(groundFx.visible === false, '晴：雪盖面不可见');
+  ok(RAIN.amount === 0 && SNOW.amount === 0, '晴：雨雪量都是 0');
+  // 晴天不能留一点残色：材质 color 必须正好等于原色
+  for (const [k] of SNOWY)
+    ok(M[k].color.getHex() === M[k].userData.baseCol, '晴：' + k + ' 回到原色',
+       '#' + M[k].color.getHex().toString(16) + ' vs #' + M[k].userData.baseCol.toString(16));
+}
+{
+  apply('day','snow');
+  ok(mul(groundMat.color.v) > 0.9, '雪：地面染色几乎不动（染色本来就不负责盖雪）', '×' + mul(groundMat.color.v).toFixed(3));
+  ok(RAIN.amount === 0 && SNOW.amount === 1, '雪：只开雪，不开雨');
+  // 雪必须靠**盖面**，不是靠染色。染色是乘法，绿草 × 白还是绿草。
+  ok(groundFx.visible === true && groundFx.material.opacity > 0.7,
+     '雪：草地盖上一层厚雪（染色做不到这件事）', groundFx.material.opacity.toFixed(3));
+  // 盖面是半透明的，最终像素 = 覆盖度×盖面色 + (1−覆盖度)×地面色。
+  // 盖面是白的，所以「覆盖度」就是雪接管了多大一块地。
+  const cov = g => g.material.opacity * mul(g.material.color.getHex());
+  ok(cov(groundFx) > 0.75, '雪：盖面覆盖度 > 0.75（地面基本被雪接管）', cov(groundFx).toFixed(3));
+  ok(mul(groundFx.material.color.getHex()) > 0.9, '雪：盖面本身是白的',
+     '#' + groundFx.material.color.getHex().toString(16));
+  ok(roadEff() > 0.6, '雪：路面整体是盖白的，不是压暗的', '×' + roadEff().toFixed(3));
+  ok(roadFx.visible === true && roadFx.material.opacity > 0.5,
+     '雪：路面盖白', roadFx.material.opacity.toFixed(3));
+  ok(roadFx.material.color.v === composeMood('day','snow').roadFxCol &&
+     (roadFx.material.color.v >> 16 & 255) > 200, '雪：路面盖面是白的不是暗的',
+     '#' + roadFx.material.color.v.toString(16));
+  ok(roadFx.material.roughness > 0.5 && roadFx.material.metalness === 0,
+     '雪：路面盖面不反光（雪不是金属）',
+     'rough ' + roadFx.material.roughness + ' / metal ' + roadFx.material.metalness);
+  // 树冠、屋顶、石墙一起挂雪，而且屋顶挂得比草丛多
+  const allLighter = SNOWY.every(([k]) => mul(M[k].color.getHex()) > mul(M[k].userData.baseCol));
+  ok(allLighter, '雪：SNOWY 表里每种材质都被提亮了');
+  const roofK = (M.roofSlate.color.getHex() - M.roofSlate.userData.baseCol) / 0xffffff;
+  const tuftK = (M.tuft.color.getHex() - M.tuft.userData.baseCol) / 0xffffff;
+  ok(roofK > tuftK * 2, '雪：屋顶挂得比草丛厚', '屋顶 ' + roofK.toFixed(3) + ' > 草 ' + tuftK.toFixed(3));
+  // 切回晴天必须**精确**回到原色：染白是从 userData.baseCol 算的，
+  // 如果改成从当前色累加，切两次就再也回不来了
+  const base = SNOWY.map(([k]) => M[k].userData.baseCol);
+  apply('day','clear');
+  ok(SNOWY.every(([k], i) => M[k].color.getHex() === base[i]),
+     '雪 → 晴：所有挂雪材质精确回到原色（不是「差不多」）');
+  apply('day','snow'); apply('day','rain'); apply('day','clear');
+  ok(SNOWY.every(([k], i) => M[k].color.getHex() === base[i]),
+     '雪→雨→晴 反复切也还是原色（baseCol 没被污染）');
+  // 换时段不能改变挂雪比例：要比的是「白天+雪」和「黄昏+雪」两份**雪色**，
+  // 不是拿雪色去比原色（那是上一条已经验过的事）
+  apply('day','snow');
+  const snowDay = SNOWY.map(([k]) => M[k].color.getHex());
+  apply('dusk','snow');
+  ok(SNOWY.every(([k], i) => M[k].color.getHex() === snowDay[i]),
+     '挂雪比例只听天气的（换时段不影响）');
+  apply('day','clear');
+}
+/* 路面最终被压多暗 = 染色乘数 × 盖面（半透明，乘上「盖完还剩多少」）。
+   只看染色那一层是不够的：把染色减半之后盖面接手了，单独看染色会以为
+   路面没变暗。 */
+{
+  apply('day','rain');
+  ok(mul(groundMat.color.v) < 0.8, '雨：地面被压暗', '×' + mul(groundMat.color.v).toFixed(3));
+  ok(roadEff() < 0.62, '雨：路面明显变暗（染色 + 湿盖面合起来）', '×' + roadEff().toFixed(3));
+  ok(roadEff() < mul(groundMat.color.v),
+     '雨：路面比草地暗（湿沥青比湿草更黑）',
+     roadEff().toFixed(3) + ' < ' + mul(groundMat.color.v).toFixed(3));
+  ok(RAIN.amount === 1 && SNOW.amount === 0, '雨：只开雨，不开雪');
+  ok(roadFx.visible === true && roadFx.material.opacity > 0.3, '雨：湿路面盖得住（1.0 档）',
+     roadFx.material.opacity.toFixed(3));
+  ok(fieldOverlay.material.color.v !== 0xffffff, '雨：草地叠层也跟着压（不然两层不同步会露馅）');
+}
+/* 时段一动，天气那几样必须原封不动 —— applyWeather 层面再验一次 */
+{
+  const before = { g: groundMat.color.v, r: roadMesh.material.color.v, w: roadFx.material.opacity, a: RAIN.amount };
+  apply('night','rain');
+  ok(groundMat.color.v === before.g && roadMesh.material.color.v === before.r &&
+     near(roadFx.material.opacity, before.w) && RAIN.amount === before.a,
+     '白天雨 → 夜晚雨，地/路/湿/雨量一模一样', '#' + before.g.toString(16) + ' → #' + groundMat.color.v.toString(16));
+}
+
+/* 按钮同步：每一档 id 都恰好被点亮一次，而且只有生效的那一档是 on */
+for (const [tk, wk] of [['dusk','fog'], ['night','rain'], ['day','snow'], ['night','clear']]){
+  const t = apply(tk, wk);
+  const ids = t.map(x => x[0]);
+  const lit = t.filter(x => x[2]).map(x => x[0]);      // [id, class, force]
+  ok(ids.length === TKS.length + WKS.length, tk + '+' + wk + ' 每档都点了一次', ids.length + ' 次');
+  ok(new Set(ids).size === ids.length, tk + '+' + wk + ' 没有重复点');
+  ok(lit.length === 2, tk + '+' + wk + ' 正好两盏灯亮', lit.join(','));
+  ok(t.every(x => x[1] === 'on'), tk + '+' + wk + ' 点的是 on 这个类', t[0][1]);
+  ok(lit.includes('t_' + tk) && lit.includes('w_' + wk), tk + '+' + wk + ' 亮的就是生效的那两档', lit.join(','));
+  ok(!lit.includes('t_' + (tk === 'day' ? 'night' : 'day')), tk + '+' + wk + ' 别的时段是灭的');
+}
+
+/* ═══ 7. 反查：这些判据抓得住它们该抓的 bug 吗 ═══
+   恒过的检查等于没有检查。下面三段分别把「漏 skyHex」「天气轴泄漏进时段」
+   「粒子不回收」这三个**真出过的**故障复现一遍，要求对应判据确实会翻。
+   写反查时踩过的坑：造坏样本必须造在**判据读的那一侧** ——
+   早先拿 lum 去判地面暗不暗，压出来 173 > 150 判失败，可那一帧的乘数
+   明明是 0.67，本来就是对的。指标选错时反查也救不了，只会更早暴露。 */
+{
+  // (a) composeMood 里少写一个 skyHex：'#1a63a8' → Number() → NaN → >>>0 → 0
+  const good = composeMood('day','clear').sky.slice();
+  const broken = TIMES.day.sky.map(c => hex6(Number(c) >>> 0));
+  ok(broken.every(c => hexOf(c) === 0) && good.every(c => hexOf(c) !== 0),
+     '反查 a：漏掉 skyHex 会得到纯黑天色（本 harness 判 FAIL）', broken[0] + ' vs ' + good[0]);
+}
+{
+  // (b) 天气轴泄漏：把 lamps 改成跟着天气走
+  const real = composeMood('night','rain');
+  const leak = Object.assign({}, real, { lamps: real.rain > 0 ? false : real.lamps });
+  ok(real.lamps === true && leak.lamps === false,
+     '反查 b：lamps 判据能分辨「天气泄漏进时段」与「没泄漏」',
+     real.lamps + ' / ' + leak.lamps);
+}
+{
+  // (c) 粒子不回收：把一滴雨直接推到盒子外 5 m
+  RAIN.amount = 1;
+  RAIN.base[0] = -WX - 5;
+  updateWeather(1/60, 0);
+  ok(RAIN.base[0] >= -WX, '反查 c：越界的雨滴会被拉回盒子（越界判据能翻）',
+     RAIN.base[0].toFixed(2) + ' → ' + RAIN.base[0].toFixed(2));
+  RAIN.base[0] = 0;
+  RAIN.amount = 0;
+}
+
+/* ---- 输出 ---- */
+const bad = L.filter(x => !x[0]);
+let h = '<h3>' + (L.length - bad.length) + ' / ' + L.length + ' 通过</h3>';
+// 失败项单独提到最前面。三百多条里翻到最底下找红字，太容易漏。
+if (bad.length){
+  h += '<div style="color:#ff6b6b;margin:6px 0 10px">下面 ' + bad.length + ' 条没过：</div>';
+  for (const [c, n, d] of bad) h += '<div class="bad">FAIL  ' + n + (d ? '   [' + d + ']' : '') + '</div>';
+  h += '<hr>';
+}
+for (const [c, n, d] of L)
+  h += '<div class="' + (c ? 'ok' : 'bad') + '">' + (c ? 'PASS  ' : 'FAIL  ') + n + (d ? '   [' + d + ']' : '') + '</div>';
+document.getElementById('o').innerHTML = h;
+document.title = (bad.length ? 'FAIL ' : 'PASS ') + (L.length - bad.length) + '/' + L.length;
+</script></body></html>

@@ -1,0 +1,172 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>route harness</title>
+<style>body{background:#0b0e13;color:#e9eef6;font:13px/1.6 Consolas,monospace;padding:14px;white-space:pre}
+.ok{color:#4ecdc4}.bad{color:#ff6b6b}</style></head><body><div id="o">running…</div>
+<script>
+/* ---- 场景常量，值必须和 _app3d.html 里一样 ---- */
+const ROAD_W = 3.9;
+const LANE = ROAD_W/4;
+const T_MIN = -LANE - ROAD_W/2;
+const T_MAX = -LANE + ROAD_W/2;
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const round1 = x => Math.max(0, Math.round(x));
+const VIGNETTES = ['vgFarm','vgPond','vgTower','vgMill','vgHay','vgShelter','vgBridge','vgMast'];
+
+/* ---- 替身：applyRoute 要动的三样东西 ---- */
+/* 景深带：objs 是一排 visible 开关，w 决定留几个 */
+const BANDS = [
+  { tag:'tree',  objs: Array.from({length:20}, () => ({visible:true})) },
+  { tag:'rock',  objs: Array.from({length:10}, () => ({visible:true})) },
+  { tag:'fence', objs: Array.from({length:44}, () => ({visible:true})) },
+  { tag:'lamp',  objs: Array.from({length:5},  () => ({visible:true})) }
+];
+/* 景片槽位：position.x 决定它在身前还是身后，set() 记录被换成了什么 */
+let VIG_SLOTS = [], VIG_MAKERS = null, KM_STONES = [];
+const mkSlots = () => {
+  VIG_SLOTS = [-300, -150, -40, 0, 40, 150, 300, 355].map(x => ({
+    position:{ x:x },
+    userData:{ cycle:0, set:function(g){ this.last = g; } }
+  }));
+};
+const S = { km:0, seg:-1, capT:0 };
+let CAP = '';
+const $ = () => ({ set innerHTML(v){ CAP = v; } });
+let JUMPS = [];
+const bgmStepTo = i => { JUMPS.push(i); };
+const BGM = { i:0, manual:false, ready:true, el:{ currentTime:60 } };
+
+/* ---- 真实路段代码，从 _app3d.html 原样切出来 ---- */
+/* 景片工厂在 harness 里没有 THREE，做成**函数**（真代码是 s.vig[i]() 现场建，
+   桩要是字符串就 TypeError 了），返回自己的名字好让断言对得上。 */
+const vgFarm=()=>'vgFarm', vgPond=()=>'vgPond', vgTower=()=>'vgTower', vgMill=()=>'vgMill',
+      vgHay=()=>'vgHay', vgShelter=()=>'vgShelter', vgBridge=()=>'vgBridge', vgMast=()=>'vgMast';
+/*__ROUTE__*/
+
+/* ---- 断言 ---- */
+const L = [];
+let bad = 0;
+const ok = (c, m) => { L.push((c?'  PASS  ':'  FAIL  ') + m); if(!c) bad++; };
+const reset = (km=0) => { S.km = km; S.seg = -1; S.capT = 0; CAP = ''; JUMPS = [];
+                          mkSlots(); VIG_MAKERS = null; KM_STONES = [];
+                          BGM.i = 0; BGM.manual = false; BGM.ready = true; BGM.el.currentTime = 60;
+                          for (const B of BANDS) for (const o of B.objs) o.visible = true; };
+const visibleOf = tag => BANDS.find(B => B.tag === tag).objs.filter(o => o.visible).length;
+const countOf   = tag => BANDS.find(B => B.tag === tag).objs.length;
+const tick = () => routeTick(1/60);
+
+L.push('路段表：');
+ok(ROUTE.length === 6, '一共 6 段（实际 ' + ROUTE.length + '）');
+ok(Math.abs(ROUTE_LEN - 5.0) < 1e-9, '全程 ' + ROUTE_LEN.toFixed(2) + ' km（15km/h 骑 20 分钟）');
+ok(ROUTE.every(s => s.name && s.km > 0 && s.say && s.w && s.vig && s.vig.length),
+   '每段都有 name/km/say/w/vig，没有空段');
+ok(ROUTE.every(s => s.trk >= 0 && s.trk < 8), '每段的曲号都在 0..7 范围内');
+ok(ROUTE.every(s => s.vig.every(f => VIGNETTES.includes(f()))),
+   '每段引用的景片都在 VIGNETTES 里（写错名字会变 undefined）');
+let at = 0, cumOK = true;
+for (const s of ROUTE){ if (Math.abs(s.at - at) > 1e-9) cumOK = false; at += s.km; }
+ok(cumOK, '累计里程表 at 算对了');
+L.push('  ' + ROUTE.map(s => s.name + ' ' + s.km.toFixed(1) + 'km/曲' + s.trk).join('  '));
+
+L.push('');
+L.push('km → 段号：');
+ok(segAt(0) === 0, 'km 0 → 第 0 段（' + routeName(0) + '）');
+let edgesOK = true, edgeMsg = [];
+for (let i = 0; i < ROUTE.length; i++){
+  const a = ROUTE[i].at, b = a + ROUTE[i].km;
+  if (segAt(a + 1e-6) !== i) edgesOK = false;
+  if (segAt(b - 1e-6) !== i) edgesOK = false;
+  if (i < ROUTE.length - 1 && segAt(b) !== i + 1) edgesOK = false;
+  edgeMsg.push(ROUTE[i].name + '[' + a.toFixed(1) + ',' + b.toFixed(1) + ')');
+}
+ok(edgesOK, '每段的起止边界都判得对 → ' + edgeMsg.join(' '));
+ok(segAt(ROUTE_LEN) === 0, '骑满一圈（' + ROUTE_LEN + ' km）→ 回到第 0 段');
+ok(segAt(ROUTE_LEN + 0.5) === segAt(0.5), '第二圈同一位置 = 同一段（' + routeName(ROUTE_LEN + 0.5) + '）');
+ok(segAt(12.3) >= 0 && segAt(12.3) < ROUTE.length, '12.3 km 仍然解析出合法段（' + routeName(12.3) + '）');
+ok(segAt(-0.5) >= 0 && segAt(-0.5) < ROUTE.length, '负 km 不会崩（' + routeName(-0.5) + '）');
+const names = new Set(ROUTE.map(s => s.name));
+ok(names.size === ROUTE.length, '六个段名不重样（重样的话玩家分辨不出换段）');
+
+L.push('');
+L.push('换段时调景（applyRoute）：');
+reset(); applyRoute(1);                       // 河堤 w: tree 0.45, rock 1.25→夹在 1, fence 不列
+ok(visibleOf('tree') === Math.floor(countOf('tree') * 0.45),
+   '河堤的树留 ' + visibleOf('tree') + '/' + countOf('tree') + ' 棵（w.tree=0.45）');
+ok(visibleOf('rock') === countOf('rock'), '河堤 w.rock=1.25 → 全留（超过 1 不该全藏）');
+ok(visibleOf('fence') === countOf('fence'), '没列 w 的栅栏一根不少（节奏层不能动）');
+ok(visibleOf('lamp') === countOf('lamp'), '路灯一个不少');
+ok(VIG_MAKERS === ROUTE[1].vig, '景片池换成了河堤那几种');
+reset(); applyRoute(2);                       // 林荫 w.tree=1.0
+ok(visibleOf('tree') === countOf('tree'), '林荫 w.tree=1.0 → 树一棵不少');
+
+L.push('');
+L.push('只重掷身前的景（身后的保留上一段）：');
+reset();
+applyRoute(1);
+const behind = VIG_SLOTS.filter(s => s.position.x <= 0);
+const ahead  = VIG_SLOTS.filter(s => s.position.x > 0);
+ok(ahead.every(s => s.userData.last), '身前的 ' + ahead.length + ' 个槽位都被重掷了');
+ok(behind.every(s => !s.userData.last), '身后的 ' + behind.length + ' 个槽位一个都没动（那是你刚离开的地方）');
+ok(VIG_SLOTS[0].position.x === -300 && !VIG_SLOTS[0].userData.last,
+   '最靠后的槽位（x=-300）没被换 —— 边界是「走过去」不是「啪一下全换」');
+
+L.push('');
+L.push('进段：喊一句 + 切曲（不抢用户自己选的歌）：');
+reset(0);
+tick();
+ok(S.seg === 0, '起步落在第 0 段');
+ok(CAP === '', '第一帧不喊（那只是「还没定」，不是「刚到」）');
+ok(JUMPS.length === 0, '第一帧不切歌');
+
+reset(ROUTE[0].km - 0.001); S.seg = segAt(S.km);
+tick();
+ok(S.seg === 0, '还没到界，不换段');
+ok(CAP === '', '没跨段就不重复喊');
+
+reset(ROUTE[0].km + 0.001); S.seg = 0; CAP = ''; JUMPS = [];
+tick();
+ok(S.seg === 1, '跨过 ' + ROUTE[0].km + ' km → 进第 1 段');
+ok(CAP === ROUTE[1].say, '喊的是这一段的台词：' + CAP.replace(/<[^>]+>/g,''));
+ok(S.capT > 3, '台词停留 ' + S.capT.toFixed(1) + ' 秒（够读完）');
+ok(JUMPS.length === 1 && JUMPS[0] === ROUTE[1].trk,
+   '自动切到本段的曲子（曲 ' + JUMPS[0] + ' = ' + ROUTE[1].trk + '）');
+
+reset(ROUTE[0].km + 0.001); S.seg = 0; BGM.manual = true; JUMPS = [];
+tick();
+ok(JUMPS.length === 0, '你手动换过歌 → 换段不抢你的曲');
+ok(BGM.manual === false, '但 manual 标记清掉了（下一段又还给你自动配）');
+
+reset(ROUTE[0].km + 0.001); S.seg = 0; BGM.el.currentTime = 5; JUMPS = [];
+tick();
+ok(JUMPS.length === 0, '曲子才响了 5 秒 → 不切（免得刚按完就被拽走）');
+
+reset(ROUTE[0].km + 0.001); S.seg = 0; BGM.ready = false; JUMPS = [];
+tick();
+ok(JUMPS.length === 0, '音频还没解锁 → 不切（免得在没手势的时候动播放器）');
+
+reset(ROUTE[0].km + 0.001); S.seg = 0; BGM.i = ROUTE[1].trk; JUMPS = [];
+tick();
+ok(JUMPS.length === 0, '本来就是这一段该放的歌 → 不切');
+
+reset(ROUTE[0].km + 0.001); S.seg = 0; BGM.manual = true; CAP = ''; JUMPS = [];
+tick();
+ok(CAP === ROUTE[1].say, '就算不切歌，台词还是要喊（风景变了得让人知道）');
+
+L.push('');
+L.push('一路骑一整圈（24 km/h，刚好 5.0 km / 0.5 km 一段）：');
+reset(0);
+let seen = [], caps = 0, last = -1;
+while (S.km < ROUTE_LEN){
+  S.km += 24/3.6/60;
+  tick();
+  if (S.seg !== last){ last = S.seg; if (seen.length) caps++; seen.push(ROUTE[S.seg].name); }
+}
+/* 断顺序而不是断个数：起步落在第 0 段，然后每段各报一次站，最后绕回第 0 段 */
+const want = ROUTE.map(s => s.name).concat([ROUTE[0].name]);
+ok(seen.length === want.length && seen.every((n,i) => n === want[i]),
+   '整圈的段序完全正确：' + seen.join(' → '));
+ok(caps === ROUTE.length,
+   '中途报站 ' + caps + ' 次（起步落在第 0 段那一次不算报站）');
+
+L.push('');
+L.push(bad === 0 ? '全部通过 ✓' : bad + ' 项失败 ✗');
+document.getElementById('o').textContent = L.join('\n');
+</script></body></html>

@@ -1,0 +1,44 @@
+# ─────────────────────────────────────────────────────────────
+#  构建产物：由 _build.ps1 / _mk*.ps1 生成，**不要**进版本库
+# ─────────────────────────────────────────────────────────────
+#
+#  为什么必须排除：partridge-3d.html 有 11.7 MB，而它是从一个
+# 252 KB 的 _app3d.html 拼出来的。改一行源码就产生一个 11.7 MB
+# 的新 blob，几次改动之后 .git 就会膨胀到几百 MB ——
+# 而这些内容一行信息都换不回来（都是可重建的）。
+#
+#  想拿回成品，跑这一条就行（需要 _app3d.html + bgm-*.mp3 + _vendor/）：
+#      powershell -NoProfile -ExecutionPolicy Bypass -File .\_build.ps1
+partridge-3d.html
+
+# 注入式探针 = 成品 + 一段检查代码，同样是产物
+_uistate.html
+
+# 回归页：由 _mk*.ps1 从 _app3d.html **切代码段**生成。
+# 切的是源文件里的原文、不是手抄，所以不提交不会丢任何信息 ——
+# 源一改，_checkall 第 7~12 步会重新生成。
+_driveharness.html
+_trafficharness.html
+_routeharness.html
+_moodharness.html
+_cruiseharness.html
+_moodstate.html
+_cruisediag.html
+
+# 实拍页（_mkdbg.ps1 生成，验完即删）
+partridge-dbg.html
+
+# ─────────────────────────────────────────────────────────────
+#  ⚠️ 下面这些是**源**，绝对不要加进上面的忽略列表
+# ─────────────────────────────────────────────────────────────
+#   bgm-1..8.mp3         8.2 MB，AI 生成的配乐，**不可再生**，唯一的副本
+#   _vendor/three149.min.js   构建输入，_build.ps1 直接读它内联进成品
+#   _app3d.html          唯一可编辑源
+#   _*.tpl.html          回归页模板
+#   _bgm-meta.json       曲目表 + 歌词
+#   AGENTS.md            项目记忆
+
+# 临时/实验产物
+_mutant*.html
+_*test.html
+_*mutant.html

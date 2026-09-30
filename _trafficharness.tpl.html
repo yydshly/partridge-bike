@@ -1,0 +1,187 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>traffic harness</title>
+<style>body{background:#0b0e13;color:#e9eef6;font:13px/1.6 Consolas,monospace;padding:14px;white-space:pre}
+.ok{color:#4ecdc4}.bad{color:#ff6b6b}</style></head><body><div id="o">running…</div>
+<script>
+/* ---- 场景常量，值必须和 _app3d.html 里一样 ---- */
+const ROAD_W = 3.9;
+const LANE = ROAD_W/4;
+const T_MIN = -LANE - ROAD_W/2;
+const T_MAX = -LANE + ROAD_W/2;
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+/* 车道定义，从 _app3d.html 原样切出来（_mktraffic.ps1）。原样切过来的是
+   const 声明，所以这里不能再写 let 占位，否则是重复声明。 */
+/*__LANES__*/
+
+/* rr() 在 app 里是随机数。回归要可复现，这里固定取区间中点。 */
+const rr = (a,b) => (a+b)/2;
+
+/* layoutRider：从 _app3d.html 原样切出来（已改名 layoutRiderImpl） */
+/*__LAYOUT__*/
+
+/* 计数壳：切出来的真函数不会自己数被调了几次，回收阈值那几条要靠它 */
+function layoutRider(r, first){ LAYOUT_CALLS++; layoutRiderImpl(r, first); }
+
+const S = { lat:0, yaw:0, target:15, hitT:0, shake:0 };
+
+/* ---- 鸭子类型的骑行者替身：车流那段只用到这几个字段 ---- */
+let LAYOUT_CALLS = 0, BUMPS = 0, QUIPS = [];
+const bumpSound = f => { BUMPS++; };
+const hitQuip   = s => { QUIPS.push(s); };
+function stubRider(dir, vr, x, z){
+  const head = { position:{ y:0.10 }, rotation:{ z:0 }, userData:{} };
+  const tail = { rotation:{ z:0 }, userData:{} };
+  return {
+    position:{ x:x, y:0, z:z },
+    rotation:{ y:0, z:0 },
+    visible: true,
+    userData:{
+      dir:dir, vr:vr, phase:0,
+      bike:{ position:{ y:0 }, rotation:{ z:0 },
+             userData:{ R:0.35, wheels:[{rotation:{}},{rotation:{}}],
+                        crank:{rotation:{}}, setLegs:()=>{} } },
+      pet:{ userData:{ parts:{ head:head, tail:tail } } }
+    }
+  };
+}
+let RIDERS = [];
+const setRiders = a => { RIDERS = a; };
+
+/* ---- 真实车流 + 碰撞代码，原样抽出来 ---- */
+function trafficTick(dt, v){/*__TRAFFIC__*/}
+
+/* ---- 断言 ---- */
+const L = [];
+let bad = 0;
+const ok = (c, m) => { L.push((c?'  PASS  ':'  FAIL  ') + m); if(!c) bad++; };
+const SEC = (secs, dt=1/60) => { for (let t=0; t<secs; t+=dt) trafficTick(dt, vNow); };
+let vNow = 0;const reset = () => { S.lat=0; S.yaw=0; S.target=15; S.hitT=0; S.shake=0;
+                      LAYOUT_CALLS=0; BUMPS=0; QUIPS=[]; vNow=0; };
+
+L.push('车道：LANE_R=' + LANE_R.toFixed(3) + '  LANE_L=' + LANE_L.toFixed(3) +
+       '  （右侧通行：自己在右道 0，对向在左道 ' + LANE_L.toFixed(2) + '）');
+ok(LANE_R === 0, '自己恒在右道中心 0');
+ok(Math.abs(LANE_L - (T_MIN + ROAD_W/4)) < 1e-9, '对向车在左道 = T_MIN + ROAD_W/4');
+ok(LANE_L < 0 && LANE_R >= 0, '对向道在路面中线左侧，自己的道在右侧');
+
+/* ================= 相对速度 =================
+   这一段是为了钉死「对向车漏掉 -v」那个 bug：
+   漏掉时迎面速度 = 它自己的速度，你再快也一样，所以量它自己的速度。 */
+L.push('');
+L.push('相对路面的速度（推满 1 秒，位移就是 m/s）：');
+/* ⚠️ v 传的是 **m/s**（app 里 `const v = S.speed/3.6`），不是 km/h。
+   传错单位会让同向车算出 rel = 5 − 20 = −15 m/s 这种离谱值。
+   z 放远一点避开碰撞，否则第一帧就撞上，测的就不是纯相对速度了。 */
+function speedOf(dir, vr, kmh){
+  const r = stubRider(dir, vr, 0, LANE_R + 5);
+  setRiders([r]); vNow = kmh/3.6;
+  S.lat = 0; S.hitT = 0;
+  for (let t=0; t<1; t+=1/60) trafficTick(1/60, kmh/3.6);
+  return r.position.x;
+}
+const vrS = 18, vrO = 22;   // 同向车 18 km/h，对向车 22 km/h
+const a0 = speedOf( 1, vrS, 0);
+ok(Math.abs(a0 - vrS/3.6) < 0.02, '同向 @你 0 m/s → +' + a0.toFixed(2) + '（=它自己）');
+const a1 = speedOf( 1, vrS, 20);
+ok(Math.abs(a1 - (vrS - 20)/3.6) < 0.02, '同向 @你 20 km/h → ' + a1.toFixed(2) + '（=它−你，被你反超）');
+const b0 = speedOf(-1, vrO, 0);
+ok(Math.abs(b0 - (-vrO/3.6)) < 0.02, '对向 @你 0 m/s → ' + b0.toFixed(2) + '（=−它自己）');
+const b5 = speedOf(-1, vrO, 15);
+ok(Math.abs(b5 - (-(vrO + 15)/3.6)) < 0.02, '对向 @你 15 km/h → ' + b5.toFixed(2) + '（=−(它+你)）');
+const b10 = speedOf(-1, vrO, 36);
+ok(Math.abs(b10 - (-(vrO + 36)/3.6)) < 0.02, '对向 @你 36 km/h → ' + b10.toFixed(2) + '（=−(它+你)）');
+/* 最直白的一条：漏掉 -v 时迎面速度恰好等于它自己的速度 */
+ok(-b10 > vrO/3.6 + 1,
+   '对向迎面速度 ' + (-b10).toFixed(2) + ' m/s **大于**它自己 ' + (vrO/3.6).toFixed(2) +
+   ' m/s（漏 -v 时会正好相等）');
+const bSlow = speedOf(-1, vrO, 4);
+const bFast = speedOf(-1, vrO, 16);
+/* 你越快 → 迎面速度的**绝对值**越大（x 往更负走），别写成反的 */
+ok(-bFast > -bSlow, '你越快，对向车迎面压得越快（' + (-bSlow).toFixed(1) + ' → ' + (-bFast).toFixed(1) + ' m/s）');
+const aSlow = speedOf(1, vrS, 16), aFast = speedOf(1, vrS, 30);
+ok(aFast < aSlow, '你越快，同向车被你落得越远（' + aSlow.toFixed(2) + ' → ' + aFast.toFixed(2) + ' m/s）');
+
+/* ================= 回收 ================= */
+L.push('');
+L.push('回收阈值：');
+reset(); { const r = stubRider(1, 18, 160.5, LANE_R); setRiders([r]); vNow=0;
+  for (let t=0; t<1; t+=1/60) trafficTick(1/60, 0);
+  ok(LAYOUT_CALLS === 1, '同向车超过 165 m → 重新安排一辆（撞线时 x=' + r.position.x.toFixed(1) + '）'); }
+reset(); { const r = stubRider(-1, 22, -44.9, LANE_L); setRiders([r]); vNow=0;
+  for (let t=0; t<1; t+=1/60) trafficTick(1/60, 0);
+  ok(LAYOUT_CALLS === 1, '对向车开到身后 45 m → 重新安排一辆'); }
+reset(); { const r = stubRider(1, 18, 100, LANE_R); setRiders([r]); vNow=0;
+  for (let t=0; t<1; t+=1/60) trafficTick(1/60, 0);
+  ok(LAYOUT_CALLS === 0, '半路上的车不会被误回收'); }
+
+L.push('');
+L.push('可见性（太远的整组隐藏）：');
+reset(); { const r = stubRider(-1, 22, 100, LANE_L); setRiders([r]); vNow=0; trafficTick(1/60, 0);
+  ok(r.visible === true, '对向车 100 m 处可见（迎面要看得远，不然像凭空冒出来）'); }
+reset(); { const r = stubRider(-1, 22, 250, LANE_L); setRiders([r]); vNow=0; trafficTick(1/60, 0);
+  ok(r.visible === false, '对向车 250 m 处隐藏'); }
+reset(); { const r = stubRider(1, 18, 160, LANE_R); setRiders([r]); vNow=0; trafficTick(1/60, 0);
+  ok(r.visible === false, '同向车 160 m 处隐藏（同向看得近，阈值 150）；它还没到 165 的回收线'); }
+
+/* ================= 碰撞 =================
+   hitQuip 曾经被误插进 rotateCaption 的函数体里，frame() 调它直接抛
+   ReferenceError：撞车没台词、还掉一帧。下面这几条就是钉死它。 */
+L.push('');
+L.push('碰撞：');
+/* v 同样是 m/s */
+const hitTest = (dx, dz, secs=1/60) => {
+  reset();
+  const r = stubRider(1, 18, dx, LANE_R + dz);
+  setRiders([r]); S.lat = LANE_R; vNow = 15/3.6;
+  for (let t=0; t<secs; t+=1/60) trafficTick(1/60, 15/3.6);
+  return r;
+};
+let r = hitTest(0.40, 0.10);
+ok(QUIPS.length === 1, '正面相撞 → 鹧鸪说了 1 句（实际 ' + QUIPS.length + ' 句）');
+ok(BUMPS === 1, '相撞 → 撞击音响了 1 次');
+ok(Math.abs(S.target - (15 - 4.5)) < 1e-6, '相撞 → 目标速度掉 4.5（' + S.target.toFixed(2) + '）');
+ok(S.shake > 0.5, '相撞 → 镜头在抖（' + S.shake.toFixed(3) + '）');
+ok(Math.abs(S.hitT - 0.70) < 1e-6, '相撞 → 冷却设成 0.70 s');
+ok(QUIPS[0] === 1, '对方在右边 → 台词方向标记 side=+1');
+
+r = hitTest(0.40, -0.10);
+ok(QUIPS[0] === -1, '对方在左边 → 台词方向标记 side=-1');
+ok(r.position.z < LANE_R - 0.10, '相撞 → 对方被横向推走（z ' + r.position.z.toFixed(3) + '）');
+/* side=-1 时是 S.lat -= side*push*0.55 = S.lat + … → 我被推向**右**(+z)，
+   对方被推向左(-z)，两边分开。方向别断言反。 */
+ok(S.lat > LANE_R, '相撞 → 我被反方向轻推向右（lat ' + S.lat.toFixed(3) + '）');
+
+r = hitTest(1.20, 0.10);
+ok(QUIPS.length === 0, '纵向差 1.20 m（>0.82）→ 不算撞');
+r = hitTest(0.40, 0.50);
+ok(QUIPS.length === 0, '横向差 0.50 m（>0.38）→ 不算撞');
+/* 冷却：撞上以后互推会把两边顶出判定框（推力 ≈ 0.30 m，框只有 ±0.38），
+   所以「冷却过了会不会再触发」不能干等——要把车显式摆回重叠位置再验。
+   v 取 18 km/h 让 rel = 0，车停在原地不自己跑掉。 */
+reset();
+{ const r = stubRider(1, 18, 0.40, LANE_R + 0.10);
+  setRiders([r]); S.lat = LANE_R; vNow = 18/3.6;
+  trafficTick(1/60, 18/3.6);
+  ok(QUIPS.length === 1, '第一次相撞 → 1 句');
+  for (let t=0; t<0.5; t+=1/60) trafficTick(1/60, 18/3.6);
+  ok(QUIPS.length === 1, '冷却 0.5 秒内再蹭 → 仍是 1 句（不是每帧都喊）');
+  ok(Math.abs(S.hitT - (0.70 - 0.5)) < 0.05, '冷却在走表（剩 ' + S.hitT.toFixed(2) + ' s）');
+  r.position.x = 0.40; r.position.z = LANE_R + 0.10; S.lat = LANE_R;
+  for (let t=0; t<0.35; t+=1/60) trafficTick(1/60, 18/3.6);
+  ok(QUIPS.length === 2, '冷却满 0.7 秒后再撞 → 第 2 句');
+}
+
+/* 贴着不放也不能把车顶到草地上去。v 用 m/s。 */
+reset();
+{ const rs = [stubRider(1, 18, 0.30, LANE_R + 0.20), stubRider(1, 18, 0.34, LANE_R + 0.22)];
+  setRiders(rs); S.lat = LANE_R; vNow = 20/3.6;
+  for (let t=0; t<6; t+=1/60) trafficTick(1/60, 20/3.6);
+  ok(S.lat >= T_MIN - 0.55 - 1e-9 && S.lat <= T_MAX + 0.55 + 1e-9,
+     '连续被顶 6 秒后 lat 仍夹在 [' + (T_MIN-0.55).toFixed(2) + ', ' + (T_MAX+0.55).toFixed(2) +
+     '] 内（实际 ' + S.lat.toFixed(3) + '）');
+  ok(QUIPS.length <= 2, '6 秒里最多触发 2 次（0.7s 冷却，不是每帧）');
+}
+
+L.push('');
+L.push(bad === 0 ? '全部通过 ✓' : bad + ' 项失败 ✗');
+document.getElementById('o').textContent = L.join('\n');
+</script></body></html>

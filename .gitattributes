@@ -1,0 +1,18 @@
+# 这些文件必须按**字节原样**存取，git 不要做任何换行/编码转换。
+#
+# 原因很具体：项目里的 .ps1 全是 **UTF-8 with BOM + CRLF**。
+# 少了 BOM，PowerShell 5.1 会按 ANSI 解码中文，引号结构被弄乱，
+# 报出来的是莫名其妙的 `Unexpected token` —— 这个问题本项目踩过。
+# 而 git 一旦做换行转换（或哪天有人在 Linux 上编辑后提交），
+# BOM 和 CRLF 就可能被悄悄改掉，症状是「昨天还好好的脚本今天解析失败」。
+*.ps1    -text
+*.html   -text
+*.json   -text
+*.md     -text
+# vendored 的 three.js：构建输入，字节要稳定
+*.js     -text
+
+# 二进制：明确声明，避免 git 尝试做差异/换行处理
+*.mp3    binary
+*.jpg    binary
+*.png    binary

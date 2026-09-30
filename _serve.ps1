@@ -1,0 +1,43 @@
+$ErrorActionPreference = 'Stop'
+$port = 8931
+$root = 'E:\minimax_code_project\0929_project\partridge-bike'
+
+$listener = New-Object System.Net.HttpListener
+$listener.Prefixes.Add("http://localhost:$port/")
+$listener.Start()
+Write-Output "serving $root on http://localhost:$port/"
+
+while ($listener.IsListening) {
+    try {
+        $ctx  = $listener.GetContext()
+        $path = $ctx.Request.Url.AbsolutePath.TrimStart('/')
+        if (-not $path) { $path = 'index.html' }
+        $file = Join-Path $root $path
+        $isHead = ($ctx.Request.HttpMethod -eq 'HEAD')
+
+        if (Test-Path -LiteralPath $file -PathType Leaf) {
+            $ext = [IO.Path]::GetExtension($file).ToLowerInvariant()
+            $mime = switch ($ext) {
+                '.html' { 'text/html; charset=utf-8' }
+                '.js'   { 'text/javascript; charset=utf-8' }
+                '.css'  { 'text/css; charset=utf-8' }
+                '.png'  { 'image/png' }
+                default { 'application/octet-stream' }
+            }
+            $bytes = [IO.File]::ReadAllBytes($file)
+            $ctx.Response.ContentType     = $mime
+            $ctx.Response.ContentLength64 = $bytes.Length
+            if (-not $isHead) { $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length) }
+        } else {
+            $ctx.Response.StatusCode = 404
+            $b = [Text.Encoding]::UTF8.GetBytes('not found')
+            $ctx.Response.ContentType     = 'text/plain'
+            $ctx.Response.ContentLength64 = $b.Length
+            if (-not $isHead) { $ctx.Response.OutputStream.Write($b, 0, $b.Length) }
+        }
+        $ctx.Response.Close()
+    } catch {
+        Write-Output "request error: $($_.Exception.Message)"
+        try { $ctx.Response.Abort() } catch { }
+    }
+}

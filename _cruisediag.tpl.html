@@ -1,0 +1,197 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>cruise diag</title>
+<style>body{background:#0b0e13;color:#e9eef6;font:12px/1.5 Consolas,monospace;padding:14px;white-space:pre}
+.bad{color:#ff6b6b}.ok{color:#4ecdc4}h3{color:#ffd166;margin:12px 0 3px}</style></head><body><div id="o">running…</div>
+<script>
+/* 诊断页：不是为了测对错，是为了**看清正在发生什么**。
+   上一轮 9 条 FAIL 里有几条判据本身写错了，光看断言名猜不出来，
+   所以这里把时间线直接摊开。 */
+const ROAD_W = 3.9;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const keys = { left:false, right:false, up:false, down:false };
+const S = { running:true, cruise:false, speed:15, target:15, sliderHold:false,
+  tSec:0, steer:0, steerIn:0, yaw:0, lat:0, capT:0, autoLat:0, autoSide:0 };
+let CAP = '';
+const $ = () => ({ set innerHTML(v){ CAP = v; } });
+let RIDERS = [];
+function mkRider(dir, z, x, vr){ return { userData:{ dir, vr }, position:{ x, z } }; }
+function clearRiders(){ RIDERS = []; }
+function physics(dt, steerIn){
+  S.steer  += (steerIn - S.steer) * Math.min(1, dt*11.0);
+  const spd = S.speed/3.6;
+  const grip = clamp(S.speed/3.5, 0, 1);
+  S.yaw -= S.steer * 1.45 * grip * dt / (1 + S.speed*0.032);
+  S.lat += -Math.sin(S.yaw) * spd * dt;
+}
+function moveRiders(v, dt){
+  for (const r of RIDERS){
+    const u = r.userData;
+    if (u.dir > 0) r.position.x += (u.vr/3.6 - v) * dt;
+    else           r.position.x -= (u.vr/3.6 + v) * dt;
+  }
+}
+function sim(n, dt, onFrame, traffic){
+  for (let i = 0; i < n; i++){
+    S.steerIn = S.cruise ? cruiseTick(dt) : (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+    physics(dt, S.steerIn);
+    if (traffic !== false) moveRiders(S.speed/3.6, dt);
+    if (onFrame) onFrame(i);
+  }
+}
+const LANE = ROAD_W/4;
+const T_MIN = -LANE - ROAD_W/2, T_MAX = -LANE + ROAD_W/2;
+const CLAMP_PAD = 0.55;
+function bounds(){
+  if (S.lat < T_MIN - CLAMP_PAD){ S.lat = T_MIN - CLAMP_PAD; S.yaw *= 0.55; }
+  if (S.lat > T_MAX + CLAMP_PAD){ S.lat = T_MAX + CLAMP_PAD; S.yaw *= 0.55; }
+}
+function reset(lat, yaw, speed, cruise){
+  S.lat = lat; S.yaw = yaw; S.speed = speed === undefined ? 20 : speed;
+  S.steer = 0; S.steerIn = 0; S.autoLat = 0; S.autoSide = 0;
+  S.cruise = cruise === undefined ? true : cruise; S.target = S.speed;
+  clearRiders();
+}
+/*__CRUISE__*/
+
+const out = [];
+const p = s => out.push(s);
+p('ROAD_W=' + ROAD_W + '  LANE_HALF=' + LANE_HALF + '  T_MAX=' + T_MAX.toFixed(3)
+  + '  AVOID_OFF=' + AVOID_OFF + '  AVOID_HIT=' + AVOID_HIT
+  + '  KP=' + KP_LAT + '  KD=' + KD_YAW);
+
+/* ── D1. 两辆车分站左右：把 side / autoLat / 距离摊开 ── */
+p('');
+p('=== D1 前后两辆分站左右（a z=+0.44 x=25, b z=-0.44 x=60, 我们 30） ===');
+{
+  reset(0, 0, 30);
+  const a = mkRider(1,  0.44, 25, 6);
+  const b = mkRider(1, -0.44, 60, 6);
+  RIDERS = [a, b];
+  let flips = 0, prevSide = 0, last = -1;
+  p('   t     a.x     b.x   side  autoSide  autoLat    lat   flips');
+  sim(60*12, 1/60, (i) => {
+    if (Math.abs(S.autoLat) > 0.15 && S.autoSide !== prevSide){ flips++; prevSide = S.autoSide; }
+    if (i - last >= 30){
+      last = i;
+      p([(i/60).toFixed(2).padStart(5), a.position.x.toFixed(1).padStart(7),
+         b.position.x.toFixed(1).padStart(7),
+         String(S.autoSide).padStart(6), String(S.autoSide).padStart(9),
+         S.autoLat.toFixed(3).padStart(8), S.lat.toFixed(3).padStart(7),
+         String(flips).padStart(6)].join(' '));
+    }
+  });
+  p('flips = ' + flips);
+}
+
+/* ── D2. 边上那辆（z=0.90）：到底是哪一条把它放进来 ── */
+p('');
+p('=== D2 边上那辆 z=0.90 x=12 ===');
+{
+  reset(0, 0, 20);
+  RIDERS = [mkRider(1, 0.90, 12, 14)];
+  const c = cruiseTick(1/60);
+  p('第一帧 steer = ' + c.toFixed(3) + '  autoSide = ' + S.autoSide + '  autoLat = ' + S.autoLat.toFixed(4));
+  p('  |r.z| = 0.90 > LANE_HALF 0.975 ? ' + (0.90 > LANE_HALF) + '  (所以没被这条挡掉)');
+  p('  dNow  = |0.90 - 0| = 0.90 > 0.75 ✓   dTgt = |0.90 - 0| = 0.90 > 1.05 ✗');
+  p('  → 两个 && 里第二个不成立，于是被当成「挡路的」');
+  p('  roomR = 0.975-(0.90+0.95) = ' + (LANE_HALF-(0.90+0.95)).toFixed(3)
+    + '   roomL = (0.90-0.95)+0.975 = ' + ((0.90-0.95)+LANE_HALF).toFixed(3));
+  p('  跑 3 秒后 autoLat = ' + S.autoLat.toFixed(3) + '  （判负数 = 往左让，方向反直觉）');
+  reset(0, 0, 20);
+  RIDERS = [mkRider(1, 0.90, 12, 14)];
+  sim(60*3, 1/60);
+  p('  3 秒后 autoLat = ' + S.autoLat.toFixed(3) + '   lat = ' + S.lat.toFixed(3));
+}
+
+/* ── D3. 增益扫描：超调 / 收敛 / 阻尼，全数字 ──
+   真常数是 const，扫不了。所以这里用**同一个 physics()** 配一组可调的
+   舵律去跑 —— 被测的是「这台车 + 这组增益」，不是另一个模型。 */
+p('');
+p('=== D3 增益扫描（真 physics，舵律 clamp(kp*(0-lat)+kd*yaw)） ===');
+p('  KP    KD   过零t   超调cm   尾4s极差cm  0.9起步收敛t  歪航向0.28掰回t');
+function lawRun(kp, kd, lat0, yaw0, spd, n, stopAt){
+  reset(lat0, yaw0, spd);
+  const s0 = Math.sign(S.lat) || 1;
+  let cross = -1, over = 0, done = -1, tail = [];
+  for (let i = 0; i < n; i++){
+    S.steerIn = clamp(kp*(0 - S.lat) + kd*S.yaw, -1, 1);
+    physics(1/60, S.steerIn);
+    moveRiders(S.speed/3.6, 1/60);
+    if (cross < 0 && Math.sign(S.lat) !== s0) cross = i/60;
+    if (cross >= 0) over = Math.max(over, Math.abs(S.lat));
+    if (done < 0 && stopAt !== undefined && Math.abs(S.lat) < stopAt) done = i/60;
+    tail.push(S.lat);
+  }
+  const t = tail.slice(-240);
+  return { cross, over, range: Math.max(...t)-Math.min(...t), done, end: S.lat };
+}
+for (const kp of [0.90, 1.10, 1.30, 1.55, 1.80]){
+  for (const kd of [2.20, 2.60, 3.10, 3.60, 4.20]){
+    const r  = lawRun(kp, kd, 0.8, 0, 20, 60*10);
+    const r9 = lawRun(kp, kd, 0.9, 0, 20, 60*10, 0.05);
+    const ry = lawRun(kp, kd, 0, -0.28, 20, 60*10, 0.05);
+    p([kp.toFixed(2).padStart(5), kd.toFixed(2).padStart(5),
+       (r.cross  < 0 ? '  -  ' : r.cross.toFixed(2).padStart(6)),
+       (r.over*100).toFixed(1).padStart(8), (r.range*100).toFixed(2).padStart(12),
+       (r9.done  < 0 ? '  未  ' : r9.done.toFixed(2).padStart(7)),
+       (ry.done  < 0 ? '  未  ' : ry.done.toFixed(2).padStart(7))].join(' '));
+  }
+  p('');
+}
+p('  当前真增益 KP=' + KP_LAT + ' KD=' + KD_YAW + ' 的那一格见上表');
+
+/* ── D4. 真的常数：超调到底多大 ── */
+p('');
+p('=== D4 真常数下的超调轨迹（lat0=0.8） ===');
+{
+  reset(0.8, 0, 20);
+  const tr = [];
+  sim(60*4, 1/60, (i) => { if (i % 6 === 0) tr.push((i/60).toFixed(2) + ':' + S.lat.toFixed(3)); });
+  p('  ' + tr.join('  '));
+}
+
+/* ── D5. 从 1.45 路肩起步：越界到底持续多久 ── */
+p('');
+p('=== D5 lat0=1.45, yaw=0.2 起步 ===');
+{
+  reset(1.45, 0.2, 20);
+  let nOut = 0, tOut = -1, tIn = -1, worst = 0;
+  sim(60*8, 1/60, (i) => {
+    worst = Math.max(worst, S.lat);
+    if (S.lat > T_MAX + 0.02){ nOut++; if (tIn < 0) tIn = i/60; }
+    if (tOut < 0 && tIn >= 0) tOut = i/60;
+  });
+  p('  越界帧数 = ' + nOut + '  = ' + (nOut/60).toFixed(2) + ' 秒   回到路面用时 '
+    + tIn.toFixed(2) + ' 秒');
+  p('  起始就比路面边缘(T_MAX=' + T_MAX.toFixed(3) + ')靠外 ' + (1.45-T_MAX).toFixed(2) + ' m');
+  p('  全程最远 = ' + worst.toFixed(3) + '（没有比出发点更远）');
+}
+
+/* ── D6. 避让到底什么时候被触发：扫触发窗口 ── */
+p('');
+p('=== D6 触发窗口（20 km/h，同向 14 km/h，closing=1.67）===');
+p('  代码里的门槛 dx <= max(9, closing*2.6) = max(9, 4.34) = 9 m');
+p('  也就是说 20km/h 追 14km/h 只能提前 9m≈5.4 秒反应');
+p('  现实：layoutRider 把同向车放在 x∈[70,165]，靠循环回收才进得来窗口');
+
+/* ── D7. 横向扫测：真实的稳态分离度（车冻住，测收敛值） ── */
+p('');
+p('=== D7 车冻在 dx=6（进得了窗口，不会飘走）：稳态分离度 ===');
+{
+  p('   r.z    side  autoLat    lat    sep');
+  let worst = 99, worstZ = 0;
+  for (let z = -0.44; z <= 0.4401; z += 0.08){
+    reset(0, 0, 20);
+    RIDERS = [mkRider(1, z, 6, 14)];
+    sim(60*6, 1/60, undefined, false);          // 冻结车流
+    const sep = Math.abs(z - S.lat);
+    if (sep < worst){ worst = sep; worstZ = z; }
+    p([z.toFixed(2).padStart(6), String(S.autoSide).padStart(6),
+       S.autoLat.toFixed(3).padStart(8), S.lat.toFixed(3).padStart(7),
+       sep.toFixed(3).padStart(7)].join(' '));
+  }
+  p('最窄 = ' + worst.toFixed(3) + ' @ z=' + worstZ.toFixed(2));
+}
+
+document.getElementById('o').textContent = out.join('\n');
+document.title = 'diag';
+</script></body></html>
