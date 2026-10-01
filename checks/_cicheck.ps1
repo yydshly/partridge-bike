@@ -92,7 +92,20 @@ foreach ($b in $runBodies) { $leaked += @($b -split "`n" | Where-Object { $_ -ma
 Chk 'run: 块体里没有混进 step 之间的 YAML 分隔注释' ($leaked -eq 0) ("混进 " + $leaked + " 行")
 Chk 'run: 块体全是 ASCII（这条约束就是本文件存在的理由之一）' ($nonAscii -eq 0) ("块体里的非 ASCII 字符数：" + $nonAscii)
 Chk '用 windows-latest' ($yml -match 'runs-on:\s*windows-latest') '缺 runs-on'
-Chk 'checkout 了仓库' ($yml -match 'actions/checkout@v4') '缺 checkout'
+# checkout 的 major 记一条**下限**，不记具体值。
+# 记具体值的话，yaml 和判据会在同一天一起过期，而且一起过期这件事没人会发现
+# —— 判据还在「通过」，只是通过的是一个该换掉的动作。
+# 下限 5 的理由写在这里：v4 目标 Node.js 20，GitHub 自 2025-09-19 起标记弃用。
+$co = [regex]::Match($yml, 'actions/checkout@v(?<maj>\d+)')
+$coMaj = if ($co.Success) { [int]$co.Groups['maj'].Value } else { -1 }
+Chk 'checkout 用的是 v5 或更高（v4 目标 Node 20，已弃用）' ($coMaj -ge 5) ('当前 v' + $coMaj)
+# 判据自己的反查：把 major 降到 4 之后，这个门槛必须真的翻 false。
+# 不然这条判据也可能恒过 —— 比如正则某天写坏了，$coMaj 恒为 -1，
+# 而 -1 >= 5 为假，看起来「会报红」，其实它红的原因和 checkout 无关。
+$coDoc = $yml -replace 'actions/checkout@v\d+', 'actions/checkout@v4'
+$coBad = [regex]::Match($coDoc, 'actions/checkout@v(?<maj>\d+)')
+$coBadMaj = if ($coBad.Success) { [int]$coBad.Groups['maj'].Value } else { -1 }
+Chk '反查：checkout 退回 v4 会被这条判据抓到' ($coBadMaj -lt 5) ('注入后解析出 v' + $coBadMaj)
 Chk '跑的是 _checkall.ps1' ($yml -match '-File\s+\.\\checks\\_checkall\.ps1') '没找到 checkall 的调用'
 Chk '末尾显式 exit $LASTEXITCODE' ($yml -match 'exit\s+\$code') '拿子检查器当最后一句却不传退出码'
 

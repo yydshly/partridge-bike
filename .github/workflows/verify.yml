@@ -24,7 +24,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      # v4 目标 Node.js 20，GitHub 自 2025-09-19 起把它标为弃用（会在运行注解里
+      # 报出来）。写这份文件时最新已是 v7，所以直接上 v7。
+      - uses: actions/checkout@v7
 
       # ── 1. mavis-trash shim ────────────────────────────────────────────
       # 8 places in this repository shell out to the local `mavis-trash`
