@@ -4135,7 +4135,18 @@ $('bRec').addEventListener('click', () => {
   $('cap').innerHTML = '鹧鸪：录着呢，<strong>别切走这个标签页</strong>（切走了画面就冻住了）';
   S.capT = 3.2;
 });
-addEventListener('visibilitychange', () => { if (document.hidden) recStop(); });
+/* ⚠️ 这里原来是**顶层裸写** addEventListener(...) —— 那个 `this` 是 window，
+   等于把监听挂到了 window 上。而 visibilitychange 的 target 是 document。
+   本文件下面第 5389 行监听的是**同一个事件**，挂的却是 document ——
+   同一件事两种写法，其中一份要么是冗余的，要么是收不到的。
+   改成绑 document 不需要先搞清「它到底冒不冒泡」：
+   caniuse 的兼容性注记说 Safari 14 之前不冒泡（那时 window 上收不到），
+   而 MDN 新页面又标 Bubbles: Yes —— 两边对不上，本机也没法实测
+   （这个事件只在真实切标签时触发，工具链切不回上一个标签页）。
+   **绑到事件的 target 上，在所有浏览器所有版本上都成立**，
+   跟冒泡语义无关。所以这是消除不一致 + 兼容老 Safari，
+   不是「修了 Chrome 上的 bug」——Chrome 上原来那行大概率是能收到的。 */
+document.addEventListener('visibilitychange', () => { if (document.hidden) recStop(); });
 addEventListener('keydown', e => {
   if (e.code === 'Space'){ e.preventDefault(); $('bPlay').click(); }
   // 方向和油门交给上面那个 keys 表按住了；这里只留切歌

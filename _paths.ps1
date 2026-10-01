@@ -92,6 +92,10 @@ $S_CICHECK   = "$DIR_CHECKS\_cicheck.ps1"
 # mp3 内容基线。这道判据和第 19 步查的是**两件事**：第 19 步管「产物里的
 # base64 有没有在传输中坏掉」，这道管「盘上那 8 个 mp3 本身还是不是当初那批」。
 $S_BGMHASH   = "$DIR_CHECKS\_bgmhash.ps1"
+# 「只在 document 上派发且不冒泡」的事件，监听必须绑 document。
+# 这类 bug 能防住它的检查必须在真浏览器里跑，**CI 跑不了**，
+# 所以在这条之外另立一道纯静态的（表只收本项目实测过的事件，理由见文件抬头）。
+$S_EVENTTARGET = "$DIR_CHECKS\_eventtarget.ps1"
 
 # ── checks/self/：判「上面这些判据自己靠不靠谱」的那些 ─────────
 $S_SCOPETEST   = "$DIR_SELF\_scopetest.ps1"
@@ -103,6 +107,7 @@ $S_DRIVEWIRES  = "$DIR_SELF\_drivewires.ps1"
 $S_PATHTEST    = "$DIR_SELF\_pathtest.ps1"
 $S_DOCTEST     = "$DIR_SELF\_doctest.ps1"
 $S_BGMHASHTEST = "$DIR_SELF\_bgmhashtest.ps1"
+$S_EVENTTARGETTEST = "$DIR_SELF\_eventtargettest.ps1"
 
 # ── gen/：生成器 ─────────────────────────────────────────────
 $S_MKDRIVE     = "$DIR_GEN\_mkdrive.ps1"
@@ -201,9 +206,9 @@ $mustExist = @(
   $APP, $BGM_META, $BGM_SHA, $THREE_LIB, $README, $AGENTS, $SCREENSHOT, $GITIGNORE, $GITATTRS,
   $S_BUILD, $S_DEPLOY, $S_SERVE, $S_SWAP, $S_REFRACTOR,
   $S_CHECKALL, $S_SYNTAX, $S_FREEVAR, $S_SCOPE, $S_LINT, $S_PAGES, $S_PATHCHECK, $S_DOCCHECK, $S_CICHECK,
-  $S_BGMHASH,
+  $S_BGMHASH, $S_EVENTTARGET,
   $S_SCOPETEST, $S_SYNTEST, $S_FREEVARTEST, $S_LINTTEST, $S_PAGESTEST, $S_DRIVEWIRES, $S_PATHTEST,
-  $S_DOCTEST, $S_BGMHASHTEST,
+  $S_DOCTEST, $S_BGMHASHTEST, $S_EVENTTARGETTEST,
   $S_MKDRIVE, $S_MKTRAFFIC, $S_MKROUTE, $S_MKMOOD, $S_MKCRUISE, $S_MKMOODSTATE,
   $S_MKUISTATE, $S_MKDIAG, $S_MKHARNESS, $S_MKPAUSE, $S_MKREC, $S_MKDBG, $S_MKTOUCH,
   $TPL_DRIVE, $TPL_TRAFFIC, $TPL_ROUTE, $TPL_MOOD, $TPL_CRUISE, $TPL_MOODSTATE,

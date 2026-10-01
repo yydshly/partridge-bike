@@ -66,7 +66,14 @@ Step '10/20 路段结构（生成）'   { & $ps $S_MKROUTE }
 Step '11/20 时段×天气（生成）'  { & $ps $S_MKMOOD }
 Step '12/20 自动巡航（生成）'   { & $ps $S_MKCRUISE }
 Step '13/20 鹧鸪状态机（生成）' { & $ps $S_MKMOODSTATE }
-Step '14/20 作用域体检'       { & $ps $S_SCOPE }
+# 「事件监听目标」和作用域体检放在同一道静态语义体检里：两者查的都是
+# **源码里那些靠肉眼看不出来的东西**，而且都不需要浏览器。
+# 单独为它开一步会让 20 变 21，而步数是 README / AGENTS / 收尾提示三处
+# 同时声明的数字；它自己的反查在第 17 步（那一组全是「判据 + 反查」）。
+Step '14/20 静态语义体检（作用域 + 事件监听目标）' {
+  & $ps $S_SCOPE
+  & $ps $S_EVENTTARGET
+}
 Step '15/20 交付自检' {
   $t = [IO.File]::ReadAllText(($PRODUCT))
   $src = Get-Item ($APP)
@@ -164,6 +171,7 @@ Step '17/20 语法/自由变量/悬空调用/路径/文档/CI/音频基线 检�
   # 那哪天反查里删掉那一行，这条判据就没人跑了，而没人跑 == 没有检查。
   & $ps $S_BGMHASH
   & $ps $S_BGMHASHTEST
+  & $ps $S_EVENTTARGETTEST
 }
 
 # ⚠️ 这一步以前**不存在**，而 A 阶段做的正是同一件事 —— 但它当时只活在
