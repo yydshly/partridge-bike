@@ -1366,8 +1366,12 @@ function taperedTrunk(h, r0, r1, segs, lean){
   }
   return { g, top: p, dir };
 }
-function makeTree(scale, leafy, cast, detail = 2){
-  const kind = (rnd()*4) | 0;               // 0-1 broadleaf, 2 poplar, 3 conifer
+/* kindPick：不给就在四种里随机挑（0-1 宽叶 / 2 白杨 / 3 针叶）；
+   给了就锁定那一路。「隧道树」要的是**冠幅** —— 针叶和白杨天生窄，
+   混进隧道里就是几根光杆，隧道感全没了，所以那一路必须能指定。 */
+function makeTree(scale, leafy, cast, detail = 2, kindPick = null){
+  const kind = kindPick === null ? ((rnd()*4) | 0) : (kindPick | 0);
+  // 0-1 broadleaf, 2 poplar, 3 conifer
   const g = new THREE.Group();
 
   if (kind === 3){                          // conifer: bare trunk + stacked skirts
@@ -1584,27 +1588,117 @@ function makeHill(far){
    tag 是给「旅程结构」用的：换路段时按标签调这一带的疏密（见 ROUTE 的 w）。
    没被任何路段列出来的标签一律按 1.0 处理，也就是全程不动的**节奏层**
    （栅栏/电线杆/白桩/路灯）—— 它们是速度感的主心骨，一根都不能少。 */
+/* ── 沿路的房子：给「镇子」段用。
+     谷仓那套 gableHouse 直接复用（它已经能出山墙、瓦顶、门和窗格），
+     这里只负责"随机出一栋像样的民居"—— 红砖或灰白、瓦顶或石板、带门带窗。
+     尺寸压到 4~6 m：镇子的房子是**路边的陪衬**，不是主角，
+     真给成谷仓那么大，路就被压窄了。 */
+function makeHouse(){
+  const w = rr(4.2, 6.4), h = rr(2.5, 3.3), d = rr(3.8, 5.0);
+  return gableHouse(w, h, d,
+    rnd() < 0.5 ? M.barnRed : M.plaster,
+    rnd() < 0.5 ? M.roofTile  : M.roofSlate,
+    { door: rnd() < 0.7, bars: (rnd()*3)|0 });
+}
+
+/* ── 芦苇丛：给「河堤」段用。
+     抄的是 vgPond 里那套（3 片竖着的 PlaneGeometry 拼一丛），
+     差别只在丛数和高度：水边的苇子要密、要高，才看得出是水边不是草地。 */
+function makeReedClump(){
+  const g = new THREE.Group();
+  const n = 5 + (rnd()*4|0);
+  for (let i=0;i<n;i++){
+    const h = rr(1.3, 2.4);
+    const bl = new THREE.Mesh(new THREE.PlaneGeometry(0.08, h, 1, 2), M.reed);
+    bl.position.set((rnd()-0.5)*0.34, h/2, (rnd()-0.5)*0.34);
+    bl.rotation.y = rnd()*3.14;
+    bl.rotation.x = (rnd()-0.5)*0.30;          // 稍微歪一点，成丛才不像一排栅栏
+    bl.rotation.z = (rnd()-0.5)*0.22;
+    g.add(bl);
+  }
+  return g;
+}
+
+/* ── 桥护栏：给「长桥」段用。
+     和栅栏的区别是**横杆要接上**（桥上不能有缝，人会以为能钻出去），
+     所以横杆长度就等于这一跨的间距，柱子只负责把横杆抬起来。 */
+function makeRail(gap){
+  const g = new THREE.Group();
+  const p = new THREE.Mesh(new THREE.CylinderGeometry(0.050, 0.062, 0.94, 6), M.post);
+  p.position.y = 0.47; p.castShadow = true; g.add(p);
+  for (const y of [0.42, 0.80]){                       // 两道横杆，接满这一跨
+    const r = new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.020, gap, 5), M.metal);
+    r.rotation.z = Math.PI/2; r.position.y = y; g.add(r);
+  }
+  return g;
+}
+
+/* ── 坡上的碎石堆：给「长坡」段用。
+     路面本身是平的（只有一层 sin 波的颠簸），做不出真坡度；
+     那就用"路肩堆着碎石"来暗示这是爬坡段 —— 真正的长坡路上就是这样。 */
+function makeBoulder(){
+  const g = new THREE.Group();
+  const n = 2 + (rnd()*3|0);
+  for (let i=0;i<n;i++){
+    const s = rr(0.24, 0.62);
+    const r = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0),
+      rnd() < 0.35 ? M.rock : M.stone);
+    r.position.set((rnd()-0.5)*1.1, s*0.62, (rnd()-0.5)*1.1);
+    r.rotation.set(rnd()*3, rnd()*3, rnd()*3);
+    r.castShadow = true; g.add(r);
+  }
+  return g;
+}
+
 const BANDS = [
   { tag:'grass', n:52, z:[2.15, 2.80], span:110, build:() => makeGrassPatch() },
   { tag:'flower',n:22, z:[2.20, 3.00], span:110, build:() => makeFlower() },
   // a fence is one continuous line: every post must land on the SAME side,
   // otherwise the wires read as a ladder lying across the carriageway
-  { tag:'fence', n:44, z:[2.62, 2.62], span:96,  side:1,  noRot:true, build:function(){ return makeFencePost(96/44); } },
+  // 篱笆改成**村口专属**：六段里只有村子有院墙，之前它在每一段都全开，
+  // 于是骑在河堤上、长桥上也立着一排栅栏柱 —— 那正是"路边的东西不知道属于哪段"。
+  { id:'fence', own:'fence', tag:'fence', n:44, z:[2.62, 2.62], span:96,  side:1,  noRot:true, build:function(){ return makeFencePost(96/44); } },
   { tag:'wire',  n:6,  z:[5.40, 5.40], span:250, side:-1, noRot:true, build:() => makeTelegraph(250/6) },
   { tag:'mark',  n:5,  z:[1.95, 1.95], span:150, side:1,  noRot:true, build:() => makeMarker() },
   // one real PointLight per lamp is the expensive part of the night scene, so
   // keep the count low and space them out — passing pools of light every 40 m
   // still reads as a lit road
   { tag:'lamp',  n:5,  z:[2.95, 2.95], span:200, side:-1, noRot:true, build:() => makeLamp() },
-  { tag:'tree',  n:24, z:[3.05, 4.10], span:150, build:() => makeTree(1.0, false, true, 2) },
+  { id:'treeNear', tag:'tree',  n:24, z:[3.05, 4.10], span:150, build:() => makeTree(1.0, false, true, 2) },
+  /* 隧道树带：只给「林荫」段开，平时一律藏起来。
+     几何是算出来的，不是"看着差不多" ——
+       scale 2.2 → 展冠橡树高 (2.0~3.8)×2.2 = 4.4~8.4 m
+       spread 1.45 → 冠半径 ≈ 高 × 1.45 × (0.42~0.76) ≈ 3.8~7.2 m
+       离路 4.3~5.6 m ⇒ 冠边缘落在路的另一侧（4.3 − 7.2 = −2.9 m）
+     也就是说**两侧的树冠会在路面上方合拢**，这才是林荫，而不是"路两边有树"。
+     树种锁成 1（展冠橡树）：白杨和针叶的冠半径不到 1.5 m，混进来就是光杆。
+     detail 1（3 根主枝、不生二级分叉）是为了这带一循环就是 44 棵，
+     叶片多面体的绘制调用比什么都贵。 */
+  { id:'tunnel',   tag:'tree',  n:44, z:[4.30, 5.60], span:130, build:() => makeTree(2.2, true, true, 1, 1) },
+  /* 房子：own:'house' ⇒ 只有开了 s.house 的段才出现。六段里只有「镇子」
+     该有房子沿路排着；村口和河堤长出一排民房就出戏了。
+     18 栋 / 210 m ⇒ 每 11.7 m 一栋，两侧交替 ⇒ 沿路每侧约 23 m 一栋，
+     加上景片里那几处大房子，路过时是"连着一片"的感觉而不是"孤立一栋"。 */
+  { id:'house', own:'house', tag:'house', n:18, z:[9.5, 18], span:210, build:() => makeHouse() },
+  /* 芦苇：own:'reed' ⇒ 只有「河堤」。26 丛 / 150 m ⇒ 每 5.8 m，两侧交替。
+     丛数比 vgPond 沿水边那圈密（那里是 18 处、当装饰），因为河堤段的
+     苇子要连成片才看得出"这是水边"，零星几丛只会像杂草。 */
+  { id:'reed',  own:'reed',  tag:'reed',  n:26, z:[5.2, 8.2],  span:150, build:() => makeReedClump() },
+  /* 桥护栏：own:'rail' ⇒ 只有「长桥」。18 组 / 96 m ⇒ 每 5.3 m 一组，
+     gap 就是组间距（96/18），横杆按这个长度做，两段接得上、看不出缝。 */
+  { id:'rail',  own:'rail',  tag:'rail',  n:18, z:[3.05, 3.05], span:96,  side:1, noRot:true,
+    build:function(){ return makeRail(96/18); } },
+  /* 碎石堆：own:'boulder' ⇒ 只有「长坡」。22 堆 / 130 m ⇒ 每 5.9 m，
+     贴路边（z 3.2~4.6）。爬坡段的路面材料是碎的不是平的，这个一眼能读出来。 */
+  { id:'boulder', own:'boulder', tag:'boulder', n:22, z:[3.20, 4.60], span:130, build:() => makeBoulder() },
   { tag:'bush',  n:26, z:[4.20, 6.60], span:170, build:() => makeBush() },
   { tag:'rock',  n:10, z:[3.20, 5.50], span:150, build:() => makeRock() },
-  { tag:'tree',  n:18, z:[7.50, 14.0], span:230, build:() => makeTree(1.5, true, true, 1) },
-  { tag:'tree',  n:16, z:[18, 30],     span:300, build:() => makeTree(2.2, true, false, 1) },
-  { tag:'tree',  n:14, z:[34, 50],     span:360, build:() => makeTree(3.0, true, false, 0) },
+  { id:'treeMid',  tag:'tree',  n:18, z:[7.50, 14.0], span:230, build:() => makeTree(1.5, true, true, 1) },
+  { id:'treeFar',  tag:'tree',  n:16, z:[18, 30],     span:300, build:() => makeTree(2.2, true, false, 1) },
+  { id:'treeLine', tag:'tree',  n:14, z:[34, 50],     span:360, build:() => makeTree(3.0, true, false, 0) },
   // 远树线从 z 56~84 挪到 z 130~180。原来的位置正好压在地标前面，把地标挡得
   // 一干二净；挪到地标后面之后，景深就分成了：近树 → 中树 → 地标 → 远树线 → 远山。
-  { tag:'tree',  n:8,  z:[130, 180],   span:600, build:() => makeTree(5.5, true, false, 0) },
+  { id:'treeSky',  tag:'tree',  n:8,  z:[130, 180],   span:600, build:() => makeTree(5.5, true, false, 0) },
   { tag:'hill',  n:9,  z:[95, 130],    span:560, build:() => makeHill(false) },
   { tag:'hill',  n:7,  z:[150, 200],   span:700, build:() => makeHill(true) }
 ];
@@ -3544,26 +3638,41 @@ for (let i=0;i<VIG_N;i++){
 const ROUTE = [
   { name:'村口', km:0.9, trk:0,
     vig:[vgFarm, vgHay, vgShelter, vgMast],
+    fence:true,
     w:{ tree:0.80, bush:1.15, rock:0.55, flower:1.30, hill:1.00 },
     say:'鹧鸪：出了<strong>村口</strong>，前面是<strong>河堤</strong>' },
   { name:'河堤', km:0.8, trk:4,
     vig:[vgPond, vgBridge, vgShelter, vgMast],
-    w:{ tree:0.45, bush:0.70, rock:1.25, flower:0.80, grass:1.25, hill:0.75 },
+    reed:true,
+    /* 石头从 1.25 压到 0.55：原来的权重让河堤是六段里石头最多的，
+       看着像采石场。堤上应该是水草多、石头少。 */
+    w:{ tree:0.45, bush:0.70, rock:0.55, flower:0.80, grass:1.25, hill:0.75 },
     say:'鹧鸪：上了<strong>河堤</strong>，水边<strong>风大</strong>，慢点' },
   { name:'林荫', km:0.7, trk:5,
     vig:[vgHay, vgMast, vgShelter, vgFarm],
-    w:{ tree:1.00, bush:1.00, rock:0.35, flower:0.85, hill:1.00 },
+    tunnel:true,
+    /* tag 的 tree:1.00 留给远处的几带（treeFar/treeLine/treeSky），那是"隧道尽头还有林子"。
+       近树和树墙按 id 单独压：treeNear 矮、站在隧道树前面会把路挡成一道绿墙；
+       treeMid 在隧道后面再排一列，纵深就没了 —— 隧道必须是最后面才收口的那一排。
+       灌木留一半（林下本来就有丛），花压到三成（树冠底下花长不开）。 */
+    w:{ tree:1.00, treeNear:0.10, treeMid:0.15,
+        bush:0.55, rock:0.35, flower:0.30, grass:0.60, hill:1.00 },
     say:'鹧鸪：进<strong>林荫</strong>了，树一棵一棵往后退' },
   { name:'长坡', km:1.2, trk:1,
     vig:[vgMill, vgTower, vgMast, vgShelter],
+    boulder:true,
     w:{ tree:0.35, bush:0.50, rock:1.35, flower:0.45, hill:1.45 },
     say:'鹧鸪：<strong>长坡</strong>！这段得攒点劲' },
   { name:'镇子', km:0.5, trk:6,
     vig:[vgFarm, vgTower, vgShelter, vgMast],
-    w:{ tree:0.55, bush:0.70, rock:0.40, flower:1.00, hill:0.70 },
+    house:true,
+    /* 树从 0.55 压到 0.40：镇子里树比屋少，屋才是主角；
+       lamp 没写就是默认 1.0，五盏路灯本来就全开，镇子该有的。 */
+    w:{ tree:0.40, bush:0.70, rock:0.40, flower:1.00, hill:0.70 },
     say:'鹧鸪：进<strong>镇子</strong>了，慢下来，别撞着人' },
   { name:'长桥', km:0.9, trk:7,
     vig:[vgBridge, vgPond, vgMast, vgMill],
+    rail:true,
     w:{ tree:0.40, bush:0.60, rock:0.95, flower:0.70, grass:0.85, hill:0.85 },
     say:'鹧鸪：上<strong>长桥</strong>了，一直往前吧' }
 ];
@@ -3583,7 +3692,22 @@ function routeName(km){ return ROUTE[segAt(km)].name; }
 function applyRoute(i){
   const s = ROUTE[i];
   for (const B of BANDS){
-    const w = (s.w && s.w[B.tag] !== undefined) ? s.w[B.tag] : 1;
+    /* 权重解析，优先级从高到低：
+         ① B.own —— **段专属**的带：只有该段开了同名开关才出现。
+            own:'tunnel' 就看 s.tunnel，own:'water' 就看 s.water。
+            它不能靠 tag 顺带被打开 —— tag 可能和别的带重名（tree 就有五条），
+            不显式关掉的话，另外几段都会莫名其妙长出同一排东西。
+         ② s.w[B.id] —— 按**带**调。id 优先于 tag 之后，「林荫」才能把
+            44 棵隧道树拉满的同时，单独把同 tag 的近树带压掉；
+            只按 tag 调的话，五条 tag:'tree' 会一起变，想压谁都压不住。
+         ③ s.w[B.tag] —— 老行为，一段里所有同 tag 的带一起调。
+         ④ 都没有就是 1。
+       ⚠️ ②里 B.id 可能是 undefined（_routeharness 用的是没有 id 的替身 BANDS），
+          s.w[undefined] 求值成 undefined，于是自然落到 ③ —— 旧 harness 不受影响。 */
+    let w;
+    if (B.own)                    w = s[B.own] ? 1 : 0;
+    else if (s.w && s.w[B.id] !== undefined) w = s.w[B.id];
+    else                          w = (s.w && s.w[B.tag] !== undefined) ? s.w[B.tag] : 1;
     const n = B.objs.length;
     for (let k = 0; k < n; k++) B.objs[k].visible = (k/n) < w;
   }
@@ -3653,6 +3777,16 @@ const S = {
    ⚠️ S 是 const（frame() 每帧闭包引用它），所以只能逐字段写回。 */
 const S0 = {};
 for (const k in S) S0[k] = S[k];
+
+/* 深链：?km=1.8 直接从那一公里开始。
+   要看某一段长什么样，不用先骑两公里过去 —— 打开就是那一段。
+   放在 S0 快照**之后**：于是「重置」也回到这个起点，而不是莫名其妙跳回 0。
+   seg 保持 -1，主循环第一帧就会按 S.km 切段、播进段台词（5043 那段逻辑）。 */
+try{
+  const q0 = new URLSearchParams(location.search).get('km');
+  const km0 = parseFloat(q0);
+  if (Number.isFinite(km0) && q0 !== null) S.km = km0;   // parseFloat(null) 是 NaN，但显式挡一层更清楚
+}catch(_){ /* file:// 下个别环境没有 URLSearchParams，忽略即可 */ }
 
 /* 重置 = 回到初始状态，**并且面板上的每一盏灯都跟上**。
    第一版只清了 9 个字段，于是骑了 3 km 之后按重置：鸟还是累的、

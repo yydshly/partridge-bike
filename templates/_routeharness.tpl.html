@@ -14,10 +14,14 @@ const VIGNETTES = ['vgFarm','vgPond','vgTower','vgMill','vgHay','vgShelter','vgB
 /* ---- 替身：applyRoute 要动的三样东西 ---- */
 /* 景深带：objs 是一排 visible 开关，w 决定留几个 */
 const BANDS = [
-  { tag:'tree',  objs: Array.from({length:20}, () => ({visible:true})) },
-  { tag:'rock',  objs: Array.from({length:10}, () => ({visible:true})) },
-  { tag:'fence', objs: Array.from({length:44}, () => ({visible:true})) },
-  { tag:'lamp',  objs: Array.from({length:5},  () => ({visible:true})) }
+  { id:'tree',  tag:'tree',  objs: Array.from({length:20}, () => ({visible:true})) },
+  { id:'rock',  tag:'rock',  objs: Array.from({length:10}, () => ({visible:true})) },
+  { tag:'lamp',  objs: Array.from({length:5},  () => ({visible:true})) },
+  /* own：段专属带 —— 只在开了同名开关的那一段出现。
+     替身里**必须**也带 own，否则 applyRoute 的 B.own 分支在这个 harness 里
+     永远走不到，机制坏了也不会红。「没被测过的代码等于没有」——
+     尤其是一种刚加的、正好解决某个问题的机制。 */
+  { id:'fence', own:'fence', tag:'fence', objs: Array.from({length:44}, () => ({visible:true})) }
 ];
 /* 景片槽位：position.x 决定它在身前还是身后，set() 记录被换成了什么 */
 let VIG_SLOTS = [], VIG_MAKERS = null, KM_STONES = [];
@@ -88,12 +92,51 @@ ok(names.size === ROUTE.length, '六个段名不重样（重样的话玩家分�
 
 L.push('');
 L.push('换段时调景（applyRoute）：');
-reset(); applyRoute(1);                       // 河堤 w: tree 0.45, rock 1.25→夹在 1, fence 不列
+reset(); applyRoute(1);                       // 河堤 w: tree 0.45
 ok(visibleOf('tree') === Math.floor(countOf('tree') * 0.45),
    '河堤的树留 ' + visibleOf('tree') + '/' + countOf('tree') + ' 棵（w.tree=0.45）');
-ok(visibleOf('rock') === countOf('rock'), '河堤 w.rock=1.25 → 全留（超过 1 不该全藏）');
-ok(visibleOf('fence') === countOf('fence'), '没列 w 的栅栏一根不少（节奏层不能动）');
-ok(visibleOf('lamp') === countOf('lamp'), '路灯一个不少');
+
+/* w > 1 必须全留 —— 要验的是这个**边界行为**，不是某个具体数值。
+   原来这里写死「河堤 w.rock=1.25」。我为了修「河堤像采石场」把那个权重
+   调到 0.55，判据就红了 —— 钉数值的判据在调平衡时会变成纯噪音，
+   让人开始无脑把数据改回去。改成现去 ROUTE 里找一个 w>1 的项来试：
+   以后任何段调权重都不会假红，而 w>1 真坏掉照样抓得住。
+   ⚠️ 比较**不能**写 (s.w[k]|0) > 1：按位或会把 1.25 截成 1，
+      于是 1.25/1.30/1.35 全都判成「不超过 1」，找遍六段也找不出一项，
+      这条判据就成了恒假 —— 第一版就是这么写的，当场全红。
+   ⚠️ 候选还必须**替身里也有**：替身只有 tree/rock/fence/lamp 四条，
+      而六段里第一个 w>1 的是「村口 bush=1.15」，bush 不在替身里。
+      不限定的话 over 选中 bush，visibleOf('bush') 在 BANDS 里找不到、返回空，
+      而「返回空」和「全部可见」在这个判据里长得一模一样 ——
+      判据声称测到了边界，其实什么都没测。限定之后挑 w 最大的那条。 */
+let over = null;
+for (const s of ROUTE) for (const k in (s.w || {}))
+  if (s.w[k] > 1 && BANDS.some(B => B.tag === k))
+    if (!over || s.w[k] > over.s.w[over.k]) over = { s, k };
+ok(over !== null, '替身覆盖的 tag 里存在 w>1 的项（没有的话这条判据就等于没测）');
+if (over){
+  reset(); applyRoute(ROUTE.indexOf(over.s));
+  ok(visibleOf(over.k) === countOf(over.k),
+     'w.' + over.k + '=' + over.s.w[over.k] + '（' + over.s.name + '）→ 全留（超过 1 不该全藏）');
+}
+
+/* 没列 w 的带 → 默认 1 → 一根不少。用 lamp 来测：
+   六段里只有镇子把 lamp 单独调过，河堤没列，正好是默认那一条路。 */
+ok(visibleOf('lamp') === countOf('lamp'), '没列 w 的路灯一根不少（默认权重是 1）');
+
+/* own：段专属带。篱笆只有「村口」开着 —— 别的段一根都不该有。
+   这条正是把「路边的东西属于哪一段」钉住的那一条：
+   篱笆以前是六段全开的，于是骑在长桥上路边也立着一排栅栏柱。 */
+reset(); applyRoute(0);                       // 村口 fence:true
+ok(visibleOf('fence') === countOf('fence'),
+   'own 带在「村口」全开：篱笆 ' + visibleOf('fence') + '/' + countOf('fence') + ' 根');
+reset(); applyRoute(1);                       // 河堤，没有 fence
+ok(visibleOf('fence') === 0,
+   'own 带在「河堤」一棵不留：篱笆 ' + visibleOf('fence') + ' 根（这才是段专属的意思）');
+
+/* 景片这条必须紧跟在 applyRoute(1) 后面测：
+   中间多插一个 reset() 会把 VIG_MAKERS 冲成 null，这条就必然红 ——
+   判据自己把上一条的收尾清掉，然后怪下一条不通过。 */
 ok(VIG_MAKERS === ROUTE[1].vig, '景片池换成了河堤那几种');
 reset(); applyRoute(2);                       // 林荫 w.tree=1.0
 ok(visibleOf('tree') === countOf('tree'), '林荫 w.tree=1.0 → 树一棵不少');

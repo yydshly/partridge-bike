@@ -126,7 +126,11 @@ if ($vals.Count -gt 0) {
   }
 
   Write-Output ''
-  Write-Output '  README 已改写成（读回核对过：九个数字一致，长度只变了 ' + $delta + ' 字符）：'
+  # ⚠️ 这里必须用 -f，不能用 `+ $delta +`：
+  #   $delta 是 Int32，它在**左操作数**的位置上 → PowerShell 选数值加法 →
+  #   `'…变了 ' + $delta + ' 字符'` 抛 "Cannot convert value" 或吐出 `+0+` 这种
+  #   带换行的怪东西。凡是把数字接进句子，一律 -f。
+  Write-Output ('  README 已改写成（读回核对过：九个数字一致，长度只变了 {0} 字符）：' -f $delta)
   Write-Output ('    ' + $line)
   Write-Output ''
   Write-Output '  ⚠️ 这九个数字是**人/agent 实跑出来的**，不是本脚本算出来的。'
@@ -154,6 +158,9 @@ foreach ($pg in $pages) {
 Write-Output ('  已打开 ' + $opened + '/' + $n + ' 页。')
 Write-Output ''
 Write-Output '下一步：把九页标题里的 PASS n/m 抄下来，然后（**逗号分隔**）'
-Write-Output '  powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\_runpages.ps1 -Set 58/58,34/34,39/39,450/450,85/85,41/41,71/71,119/119,63/63'
+# 模板直接取 README 现在写的九个数，**不写死** ——
+# 写死过一次（39/39），真跑出来 41/41 之后它就成了一句谎话，
+# 而 -Set 的建议行恰恰是最容易被照抄的那一行。
+Write-Output ('  powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\_runpages.ps1 -Set ' + (($cur | ForEach-Object { $_ }) -join ','))
 Write-Output '（顺序 = 上表；n 可以只写一个数，省略 /n）'
 exit 0
