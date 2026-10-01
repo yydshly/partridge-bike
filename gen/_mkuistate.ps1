@@ -649,6 +649,112 @@ uok(afterDrag.lit.length === 0,
                       + ' far×' + SEGLIGHT[i].fogFar).join('\n')]);
 }
 
+/* ── 6. 导演模式 ──
+   它是**一张分镜表**，不是「自动巡航换个名字」：每镜跳到自己的公里数、
+   切自己的时段/天气/机位。下面钉的是这张表和这台机器的接线。 */
+{
+  uok(!!el('bDir'), '面板上有「导演模式」的入口（不是藏在某个快捷键里）', 'b' + (el('bDir') ? 'Dir 存在' : 'Dir 不存在'));
+  uok(SHOTS.length >= 6, '分镜表有 ' + SHOTS.length + ' 镜（够把六段走一遍）');
+
+  /* ① 覆盖面。**这是本节最要紧的一条**：用户要的是「把所有能力演示一遍」，
+        所以判据必须数「演示到了没有」，而不是数「代码写了几行」。
+        少一个天气就算没做完 —— 所以这里是集合比对，不是钉具体是哪一镜。 */
+  {
+    const segs = new Set(), wks = new Set(), tks = new Set(), cams = new Set();
+    let cinShots = 0;
+    for (const s of SHOTS){
+      segs.add(routeName(s.km));
+      wks.add(s.wk); tks.add(s.tk); cams.add(s.cam);
+      if (s.cin) cinShots++;
+      // 每一镜的落点必须真在它自己的那一段里（按段表算，不钉死 0.3/1.2）
+      uok(s.km >= 0 && s.km < ROUTE_LEN, '第 ' + SHOTS.indexOf(s) + ' 镜的落点 ' + s.km + ' km 在全程内');
+    }
+    const names = ROUTE.map(r => r.name);
+    uok([...segs].length === names.length,
+       '六段都走到了（' + [...segs].join('·') + '）',
+       '走到的段：' + [...segs].join(' ') + ' / 六段：' + names.join(' '));
+    uok(wks.size === Object.keys(WEATHER).length,
+       '四种天气都演示到了（' + [...wks].join('·') + '）', [...wks].join(' '));
+    uok(tks.size === Object.keys(TIMES).length,
+       '三个时段都演示到了（' + [...tks].join('·') + '）', [...tks].join(' '));
+    uok(cinShots > 0, '至少有一镜是电影模式（' + cinShots + ' 镜）');
+    uok(cams.size >= 3, '用到了 ' + cams.size + ' 种机位');
+    for (const c of cams) uok(c === 'bSpin' || !!CAMS[c], '机位 ' + c + ' 在机位表里（有出处，不是手写的一组数）');
+  }
+
+  /* ② 一镜一镜跑：公里数、时段、天气、机位、电影模式，逐项对上分镜表。 */
+  {
+    let bad = [];
+    for (let i = 0; i < SHOTS.length; i++){
+      const s = SHOTS[i];
+      dirStop();
+      el('bDir').click();                 // 真点面板上那个键
+      for (let k = 0; k < i; k++) dirShot(k + 1);   // 快进到第 i 镜
+      const r = { km:S.km, seg:S.seg, tk:MOOD.tk, wk:MOOD.wk, cin:CIN.on, cam:CAM.spin ? 'bSpin' : null };
+      if (Math.abs(S.km - s.km) > 1e-6)       bad.push('第' + i + '镜 km ' + S.km + '≠' + s.km);
+      if (S.seg !== segAt(s.km))             bad.push('第' + i + '镜 seg 没跟着走');
+      if (MOOD.tk !== s.tk)                  bad.push('第' + i + '镜 时段 ' + MOOD.tk + '≠' + s.tk);
+      if (MOOD.wk !== s.wk)                  bad.push('第' + i + '镜 天气 ' + MOOD.wk + '≠' + s.wk);
+      if (CIN.on !== !!s.cin)                bad.push('第' + i + '镜 电影模式 ' + CIN.on + '≠' + !!s.cin);
+      if (!r.cam && !(s.cam === 'bSpin')) {
+        const lit = ['bFollow','bFront','bBack','bBird','bBike'].filter(b => el(b).classList.contains('on'));
+        if (lit[0] !== s.cam) bad.push('第' + i + '镜 机位 ' + lit.join() + '≠' + s.cam);
+      }
+    }
+    uok(bad.length === 0, '八镜逐项对上分镜表：公里/段/时段/天气/机位/电影模式',
+       bad.length ? bad.join('; ') : SHOTS.map(s => s.km + 'km ' + s.tk + '/' + s.wk).join('  '));
+  }
+
+  /* ③ 走完一轮会绕回第 1 镜，不是停在最后一镜不动。 */
+  {
+    dirStop(); el('bDir').click();
+    const before = DIR.i;
+    DIR.t = SHOTS[before].dur;              // 把这一镜的时长用完
+    frame();
+    uok(DIR.i === (before + 1) % SHOTS.length,
+       '时长到了自动切下一镜（第 ' + (before + 1) + ' 镜 → 第 ' + DIR.i + ' 镜），走完绕回第 1 镜',
+       'i=' + before + ' → ' + DIR.i + '，共 ' + SHOTS.length + ' 镜');
+  }
+
+  /* ④ 停：Esc 和再点一下都得停，灯也得灭。
+        ⚠️ 这一条最要紧的不是「能停」，是**电影模式那一镜也得能停** ——
+           电影模式会把面板藏起来，用户连按钮都点不着，只能靠 Esc。
+           所以 Esc 这条不是可有可无的便利，是唯一的出路。 */
+  {
+    const toCine = SHOTS.findIndex(s => s.cin);
+    dirStop(); el('bDir').click();
+    for (let k = 0; k <= toCine; k++) dirShot(k);
+    const inCine = CIN.on;
+    document.dispatchEvent(new KeyboardEvent('keydown', { code:'Escape', bubbles:true }));
+    uok(DIR.on === false, 'Esc 能停导演模式（这是电影模式那一镜唯一的出路）', 'DIR.on=' + DIR.on);
+    uok(!el('bDir').classList.contains('on'), '停了以后面板上那盏灯跟着灭');
+    uok(inCine && !CIN.on, '进了电影模式的那一镜，退出时电影模式也一并收掉（不能把人留在全屏里）',
+       '进电影模式=' + inCine + ' 退出后=' + CIN.on);
+    el('bDir').click();
+    uok(DIR.on === true, '再点一下能重新开始');
+    el('bDir').click();
+    uok(DIR.on === false, '再点一下能停（按钮是开关，不是「只进不出」）');
+  }
+
+  /* ⑤ 用户本来就在电影模式里看，导演不该把它带走。 */
+  {
+    enterCinema();
+    const wasOn = CIN.on;
+    const d0 = { on:DIR.on, put:DIR.putCinema };
+    el('bDir').click();
+    const d1 = { on:DIR.on, put:DIR.putCinema, cin:CIN.on };
+    dirStop();
+    uok(wasOn && CIN.on, '导演结束时**不**退出用户自己进的电影模式',
+       'enterCinema 后 CIN.on=' + wasOn + ' | click 前 DIR=' + JSON.stringify(d0)
+       + ' | click 后=' + JSON.stringify(d1) + ' | dirStop 后 CIN.on=' + CIN.on);
+    exitCinema();
+  }
+  dirStop();
+  applyMood('day', 'clear');
+  S.km = 0; S.seg = -1; S.cruise = false; el('bCruise').classList.remove('on');
+  setCamMode('bSpin', true);
+}
+
 /* ── 输出 ── */
 const bad = R.filter(x => !x[0] && x[0] !== 'I');
 let h = '<h3>' + (R.filter(x => x[0] === true).length) + ' / ' + R.filter(x => x[0] !== 'I').length + ' 通过</h3>';

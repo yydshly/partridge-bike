@@ -336,6 +336,7 @@
       <button class="icon" id="bPlay" title="空格">⏸</button>
       <button id="bReset">重置</button>
       <button id="bCinema" title="F — 全屏 + 藏起面板，只留画面；动一下鼠标界面就回来">⛶ 电影模式</button>
+      <button id="bDir" title="按分镜表自动巡游六段：每镜自己配时段、天气和机位。按 Esc 退出">🎬 导演模式</button>
     </div>
     <div class="grp">
       <label>速度</label>
@@ -4117,12 +4118,27 @@ function setCamMode(id, spin){
 function camPresetOff(){
   for (const b of ['bFollow','bFront','bBack','bBird','bBike']) $(b).classList.remove('on');
 }
+/* 机位预设表。**按钮和导演模式必须读同一张** ——
+   同一个机位有两个出处的话，早晚有一个会改而另一个不改，
+   然后「导演模式的鸟瞰」和「面板的鸟瞰」差半个身位，没人会发现。 */
+const CAMS = {
+  bFollow:{ az:'keep', pol:1.20, dist:2.55, ty:0.62 },
+  bFront: { az:0.0,      pol:1.32, dist:2.95, ty:0.62 },
+  bBack:  { az:Math.PI,  pol:1.32, dist:2.95, ty:0.62 },
+  bBird:  { az:0.92,     pol:1.34, dist:0.86, ty:1.20 },
+  bBike:  { az:1.16,     pol:1.30, dist:1.55, ty:0.66 }
+};
+function camGo(id){
+  const c = CAMS[id];
+  setCamMode(id, false);
+  setView(c.az === 'keep' ? CAM.azT : c.az, c.pol, c.dist, c.ty);
+}
 $('bSpin').addEventListener('click',   () => { setCamMode('bSpin', true); CAM.idle = 99; });
-$('bFollow').addEventListener('click', () => { setCamMode('bFollow', false); setView(CAM.azT, 1.20, 2.55); });
-$('bFront').addEventListener('click',  () => { setCamMode('bFront', false);  setView(0.0, 1.32, 2.95); });
-$('bBack').addEventListener('click',   () => { setCamMode('bBack', false);   setView(Math.PI, 1.32, 2.95); });
-$('bBird').addEventListener('click',   () => { setCamMode('bBird', false);   setView(0.92, 1.34, 0.86, 1.20); });
-$('bBike').addEventListener('click',   () => { setCamMode('bBike', false);   setView(1.16, 1.30, 1.55, 0.66); });
+$('bFollow').addEventListener('click', () => camGo('bFollow'));
+$('bFront').addEventListener('click',  () => camGo('bFront'));
+$('bBack').addEventListener('click',   () => camGo('bBack'));
+$('bBird').addEventListener('click',   () => camGo('bBird'));
+$('bBike').addEventListener('click',   () => camGo('bBike'));
 setCamMode('bSpin', true);   // single source of truth for the initial mode too
 
 /* ══════════════ 电影模式 ══════════════
@@ -4174,6 +4190,78 @@ function enterCinema(){
 }
 $('bCinema').addEventListener('click', () => { CIN.on ? exitCinema() : enterCinema(); });
 $('cBare').addEventListener('click', () => { if (CIN.on) setBare(!CIN.bare); });
+
+/* ══════════════════ 导演模式 ══════════════════
+   一张**分镜表**：每镜自己配公里数、时段、天气、机位、时长、台词。
+   它不是「自动巡航」换个名字 —— 巡航是沿着路一直往前，这是**跳切**：
+   一镜一个地方、一套光，导演说了算。
+
+   走完 8 镜刚好把能演示的都过了一遍：
+     六段各自的风光 · 白天/黄昏/夜晚 · 晴/雨/雾/雪 · 电影模式 · 四种机位。
+   加镜头只要往 SHOTS 里加一行，不用改任何逻辑。 */
+const SHOTS = [
+  { km:0.30, tk:'day',   wk:'clear', cam:'bSpin',   spd:10, dur:18, cin:false,
+    cap:'<b>一条路，六个地方。</b>　导演模式按分镜表走，按 <b>Esc</b> 随时退出' },
+  { km:1.20, tk:'day',   wk:'clear', cam:'bFollow', spd:14, dur:16, cin:false,
+    cap:'<b>河堤</b>　水边开阔，天空给的光更多 —— 六段各有各的光' },
+  { km:2.00, tk:'day',   wk:'clear', cam:'bFollow', spd:13, dur:16, cin:false,
+    cap:'<b>林荫</b>　44 棵隧道树。树冠把太阳挡掉大半，所以这一段的直射光只有别处的四成' },
+  { km:3.00, tk:'day',   wk:'rain',  cam:'bFollow', spd:12, dur:16, cin:false,
+    cap:'<b>长坡</b>　<b>雨</b>　路面湿了反光就上来；时段和天气是全局的，段的光叠在上面' },
+  { km:3.80, tk:'dusk',  wk:'rain',  cam:'bFollow', spd:11, dur:16, cin:false,
+    cap:'<b>镇子</b>　<b>黄昏 + 雨</b>　土墙瓦顶，所以光是暖的' },
+  { km:4.50, tk:'night', wk:'fog',   cam:'bFollow', spd:11, dur:18, cin:true,
+    cap:'<b>长桥</b>　<b>夜 + 雾</b>　桥上最开阔，看得最远' },
+  { km:2.00, tk:'night', wk:'snow',  cam:'bBike',   spd:12, dur:16, cin:true,
+    cap:'<b>雪夜的林荫</b>　同一个地方，换一套时段和天气，还是那六段自己的光' },
+  { km:0.30, tk:'day',   wk:'clear', cam:'bBird',   spd:14, dur:16, cin:false,
+    cap:'<b>回到村口</b>　一轮走完，自动从头再放' }
+];
+const DIR = { on:false, i:0, t:0, putCinema:false };
+
+/* 切到某一镜。km 是**跳**过去的 —— 骑过去要两三分钟，那不叫分镜叫赶路。
+   跳的时候顺手把 S.seg 也设成当前段，主循环的 `seg !== S.seg` 就不会触发，
+   进段台词也就不会把这镜的说明盖掉。 */
+function dirShot(i){
+  const s = SHOTS[i];
+  DIR.i = i; DIR.t = 0;
+  S.km = s.km; S.seg = segAt(s.km);
+  applyRoute(S.seg);
+  applyBands(S.km);
+  applySegLight(s.km);
+  if (MOOD.tk !== s.tk || MOOD.wk !== s.wk) applyMood(s.tk, s.wk);
+  S.speed = s.spd; S.target = s.spd;
+  if (!S.cruise){ S.cruise = true; $('bCruise').classList.add('on'); }
+  if (s.cam === 'bSpin'){ setCamMode('bSpin', true); CAM.idle = 99; }
+  else camGo(s.cam);
+  if (s.cin && !CIN.on){ enterCinema(); DIR.putCinema = true; }
+  if (!s.cin && CIN.on && DIR.putCinema){ exitCinema(); DIR.putCinema = false; }
+  $('cap').innerHTML = s.cap;
+  S.capT = s.dur;
+}
+function dirStop(){
+  DIR.on = false;
+  DIR.t = 0;
+  $('bDir').classList.remove('on');
+  /* 只退出**自己进的**电影模式。用户本来就在电影模式里看，不该被导演带走。 */
+  if (DIR.putCinema && CIN.on) exitCinema();
+  /* ⚠️ 这个标志**必须无条件复位**。
+     原来这里写成 `if (!DIR.on) return;` 提前返回，于是 DIR.on 已经是 false
+     而 putCinema 还挂着 true 的时候，dirStop 什么都不做 —— 脏值就一直留在
+     上。下一轮 dirShot 看到「不是电影镜头 + 电影模式开着 + putCinema」，
+     就把**用户自己进的**电影模式退了。
+     （_uistate 抓到的：进电影模式后点导演，第一镜就把用户的全屏收了。）
+     顺带一提：dirStop 现在是幂等的，提前返回本来就没必要。 */
+  DIR.putCinema = false;
+}
+function dirStart(){
+  if (DIR.on){ dirStop(); return; }
+  DIR.on = true;
+  DIR.putCinema = false;      // 新的一轮绝不继承上一轮的痕迹
+  $('bDir').classList.add('on');
+  dirShot(0);
+}
+$('bDir').addEventListener('click', dirStart);
 // 活动唤醒。pointermove 在拖镜头时连着触发，所以拖动时界面会一直亮着 —— 正是想要的。
 // 循环变量起名 act 而不是 ev：同文件上面已经有一个 `for (const ev of ...)`，
 // 各自成块不冲突，但同名在一个函数里出现两次，判自由变量的人得先想一下作用域。
@@ -4212,6 +4300,15 @@ addEventListener('keydown', e => {
   /* Esc：全屏时浏览器自己会退（随后 syncFs 把电影模式也带出来）；
      没在全屏时（比如 iframe 里）Esc 不归浏览器管，得我们自己收。 */
   if (e.code === 'Escape' && CIN.on && !fsOn()) exitCinema();
+  /* Esc 也能收导演模式。必须排在电影模式**之后**：
+     导演的某一镜可能开着电影模式，这时一次 Esc 该先收谁要想清楚 ——
+     现在是先退全屏/电影模式、导演留着（它下一镜还会再进），
+     第二次 Esc 才停导演。反过来（Esc 直接停导演、把电影模式留在屏幕上）
+     会让人以为按了没反应，因为画面还是全屏的。
+     反过来更糟的版本是：Esc 什么都不做，面板又被电影模式藏着，
+     用户被锁在一段自动播放里连停都停不了 —— 所以面板上那盏灯
+     和「按 Esc」这句提示都得留着。 */
+  if (e.code === 'Escape' && DIR.on) dirStop();
 });
 // 时段和天气各是一根独立的线：只动一根，另一根原样留着
 for (const k in TIMES)    $('t_'+k).addEventListener('click', () => applyMood(k, MOOD.wk));
@@ -5307,6 +5404,13 @@ function frame(){
     /* 段的光同样每帧跟 km 走，理由和上一行一样。排在 applyBands 后面：
        两者都读 km，谁都不该覆盖谁。 */
     applySegLight(S.km);
+    /* 导演模式：到点切下一镜。**必须每帧查**，不能靠 setTimeout ——
+       标签页一进后台，setTimeout 会被浏览器压着不放，切镜就停了；
+       而每帧查的话，页面回来第一帧就补上。 */
+    if (DIR.on){
+      DIR.t += dt;
+      if (DIR.t >= SHOTS[DIR.i].dur) dirShot((DIR.i + 1) % SHOTS.length);
+    }
     const wheelRev = v / (2*Math.PI*R_WHEEL);
     S.wheel += wheelRev * Math.PI*2 * dt;
     S.crank += wheelRev * Math.PI*2 * dt;
