@@ -238,6 +238,39 @@ uok(afterDrag.lit.length === 0,
   el('bSpin').click();
 }
 
+/* ═══ 电影模式：真点一次按钮 ═══
+   这一段是被一次真事故逼出来的：按钮和 F 键都「进去 0.5 秒又出来」，
+   而当时语法、自由变量、8 套 harness、CI 全绿 ——
+   因为**没有任何一条判据真的点过那个按钮**。
+   所以「点一下，看界面有没有变」本身就得是一条判据，不能靠人记得点。 */
+{
+  const root   = document.documentElement;
+  const panelD = () => { const p = document.querySelector('.panel');
+                         return p ? getComputedStyle(p).display : '(没有面板)'; };
+  const inCin  = () => root.classList.contains('cin');
+  uok(!inCin(), '电影模式：初始不在电影模式（好样本不误伤）', 'class=' + root.className);
+  el('bCinema').click();
+  uok(inCin(), '点「电影模式」→ 真的进了（点完界面必须变，否则按钮就是装饰）', 'class=' + root.className);
+  uok(panelD() === 'none', '进电影模式后面板真的收起来了', 'panel display=' + panelD());
+  el('bCinema').click();
+  uok(!inCin(), '再点一次 → 退出，面板回来', 'class=' + root.className);
+
+  /* 关键的一条。全屏请求被拒（没用户交互 / iframe 没放行 / iOS 的限制）之后，
+     浏览器会回一个「当前不在全屏」的 fullscreenchange。
+     旧实现把它当成「用户退了全屏」，于是把**刚藏好的界面又放出来** ——
+     表现就是「点一下什么都没发生」，而控制台一个错都没有。
+     修法是只认「确实进过全屏、现在不在了」（CIN.wasFs）。
+     下面两条**一起**验：如果只有第一条，这个守卫也可能是恒过的。 */
+  el('bCinema').click();
+  document.dispatchEvent(new Event('fullscreenchange'));   // 模拟「请求被拒的回音」
+  uok(inCin(), '全屏请求被拒（wasFs 仍 false）→ 电影模式留在原地，不被自己的回音撤销',
+     'class=' + root.className);
+  CIN.wasFs = true;                                        // 装回「确实进过全屏」这个前提
+  document.dispatchEvent(new Event('fullscreenchange'));
+  uok(!inCin(), '反查 ⑧：真的进过全屏、现在退出了 → 电影模式必须跟着退（证明上一条不是恒过）',
+     'class=' + root.className);
+}
+
 /* ═══ 反查：把**旧的坏代码原样装回去**，同一套判据必须翻 ═══
    ⚠️ 第一版这里写错了方向：只是把状态弄脏、然后仍然调用**修好的**处理器，
       谓词当然还是 true —— 脏状态被修好了，等于什么都没量。

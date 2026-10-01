@@ -2,17 +2,42 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<!-- viewport-fit=cover：让内容**铺到刘海/圆角下面**，配合下面 CSS 里的
+     env(safe-area-inset-*) 把控件让开。没有它，真全屏时鸟会被刘海挡住、
+     屏幕边缘的按钮点不到。
+     ⚠️ user-scalable=no 留着：页面自带捏合缩放（_touchharness 量过），
+        再叠加浏览器的整页缩放会变成双重缩放、手感全乱。
+        它在 iOS 10 之后本来就被忽略，所以留着无害。 -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<!-- 「全屏运行」在手机上只能靠主屏（standalone）。没有这两组 meta，
+     iOS 不会把页面当独立应用，状态栏和工具条永远压在上面。 -->
+<meta name="theme-color" content="#0b0e13" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<!-- black-translucent：内容铺到状态栏**下面**，配合 safe-area 留白 -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="鹧鸪骑单车" />
 <title>鹧鸪骑单车 3D v2 · Partridge on Wheels 3D</title>
 <style>
   :root{
     --bg:#0b0e13; --panel:#141922; --panel2:#1b222d; --line:#28303d;
     --fg:#e9eef6; --dim:#8a97a9; --accent:#ffc857; --accent2:#4ecdc4;
+    /* 舞台高度算式里的「视口高」。⚠️ 原来写死 100vh，而 100vh 在移动端是
+       **地址栏收起时**的最大视口高度：用户往下一滑、地址栏弹出来，
+       算出来的舞台就比真正能看见的视口高 —— 于是底下被切掉一截。
+       dvh（dynamic viewport height）才是「此刻真的能看见多少」。
+       老浏览器不认 dvh，@supports 兜回 100vh。 */
+    --appvh:100vh;
   }
+  @supports (height:100dvh){ :root{ --appvh:100dvh } }
   *{box-sizing:border-box}
   html,body{height:100%}
   body{
     margin:0; padding:16px;
+    /* 刘海屏 / 圆角屏：横过来时左右两边会被切掉一块。
+       env() 在不支持的环境里算 0，max() 于是退化成原来那个 16px。 */
+    padding-left:max(16px, env(safe-area-inset-left));
+    padding-right:max(16px, env(safe-area-inset-right));
     background:radial-gradient(1100px 640px at 50% -12%, #1c2733, #080a0e 72%);
     color:var(--fg);
     font:14px/1.5 "PingFang SC","Hiragino Sans GB","Microsoft YaHei",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
@@ -22,7 +47,7 @@
   #wrap{width:100%}
   .stage{
     position:relative; margin:0 auto;
-    width:min(1280px, 100%, calc((100vh - 236px) * 16 / 9));
+    width:min(1280px, 100%, calc((var(--appvh) - 236px) * 16 / 9));
     aspect-ratio:16/9; border-radius:16px; overflow:hidden;
     background:#0b0e12; border:1px solid var(--line);
     box-shadow:0 28px 70px -24px #000c, 0 0 0 1px #ffffff0a inset;
@@ -153,11 +178,36 @@
         压根进不了上面那段 max-width，只写一份的话横屏按钮还是 31px 高。 */
   @media (max-height:560px){
     body{padding:6px}
-    .stage{width:min(100%, calc((100vh - 108px) * 16 / 9))}
+    .stage{width:min(100%, calc((var(--appvh) - 108px) * 16 / 9))}
     .panel{padding:8px 10px; gap:6px 10px}
     .hint{display:none}                /* 横着本来就窄，提示条会和 HUD 抢地方 */
     button{min-height:42px; min-width:44px}
   }
+
+  /* ══════════════ 电影模式 ══════════════
+     全屏 + 藏起界面，只留画面；动一下鼠标/手指，界面淡回来，2.6 秒后再淡出。
+     全屏和「藏界面」是**两件独立的事**：浏览器规定 requestFullscreen 只能
+     在用户手势里调用，而 iframe（harness 就是）除非 allow="fullscreen"
+     永远进不去全屏。所以电影模式不能挂在全屏成功与否上 ——
+     全屏失败也要照样藏界面，否则一进 iframe 就整个功能失效。 */
+
+  /* 淡出淡入要能看见，.hud 原来没有 transition */
+  .hud{transition:opacity .45s ease}
+
+  .cin body{padding:0}
+  .cin #wrap{height:100%}
+  .cin .panel, .cin #err{display:none}
+  .cin .stage{
+    width:100%; height:var(--appvh); max-width:none;
+    aspect-ratio:auto; border-radius:0; border:0; box-shadow:none;
+  }
+  .cin .hud, .cin .hint{opacity:0}
+  .cin.over .hud, .cin.over .hint{opacity:1}
+  /* 隐藏时别再吃掉手势：hud/hint 本来就是 pointer-events:none，
+     面板才是真正需要关掉点击目标的那些，已经 display:none 了。 */
+  /* ⚠️ 台词(.cap)和歌词(.lyric)**故意留着** —— 它们是内容不是界面：
+     藏掉它们画面就只剩一只鸟在骑，「鹧鸪」这个角色的性格全没了。
+     想连它们一起藏，把上面两行加上 .cin .cap, .cin .lyric 即可。 */
 </style>
 </head>
 <body>
@@ -179,6 +229,7 @@
     <div class="grp">
       <button class="icon" id="bPlay" title="空格">⏸</button>
       <button id="bReset">重置</button>
+      <button id="bCinema" title="F — 全屏 + 藏起面板，只留画面；动一下鼠标界面就回来">⛶ 电影模式</button>
     </div>
     <div class="grp">
       <label>速度</label>
@@ -225,7 +276,7 @@
     <div class="spacer"></div>
     <button id="bRec" title="录 10 秒。出来的视频**没有声音** —— 音乐走的是另一条通道（&lt;audio&gt;），进不了录像；要带声音是另一件单独的活。切走标签页会自动收尾">● 录 10 秒</button>
     <button id="bShot">保存当前帧 PNG</button>
-    <span class="tip"><b>拖速度滑杆</b> 加速 · <kbd>A</kbd><kbd>D</kbd> 打方向 · <kbd>W</kbd><kbd>S</kbd> 加速刹车 · <kbd>N</kbd><kbd>B</kbd> 切歌 · <kbd>空格</kbd> 播放</span>
+    <span class="tip"><b>拖速度滑杆</b> 加速 · <kbd>A</kbd><kbd>D</kbd> 打方向 · <kbd>W</kbd><kbd>S</kbd> 加速刹车 · <kbd>N</kbd><kbd>B</kbd> 切歌 · <kbd>空格</kbd> 播放 · <kbd>F</kbd> 电影模式</span>
   </div>
   <div id="err"></div>
 </div>
@@ -3727,6 +3778,79 @@ $('bBack').addEventListener('click',   () => { setCamMode('bBack', false);   set
 $('bBird').addEventListener('click',   () => { setCamMode('bBird', false);   setView(0.92, 1.34, 0.86, 1.20); });
 $('bBike').addEventListener('click',   () => { setCamMode('bBike', false);   setView(1.16, 1.30, 1.55, 0.66); });
 setCamMode('bSpin', true);   // single source of truth for the initial mode too
+
+/* ══════════════ 电影模式 ══════════════
+   全屏 + 藏起面板，只留画面；动一下鼠标/手指界面淡回来，2.6 秒没人理它再淡出。
+   「全屏」和「藏界面」是**两件独立的事**，必须解耦：
+   浏览器规定 requestFullscreen 只能在用户手势那一拍同步调用，
+   而 iframe（harness 就跑在里面）除非带 allow="fullscreen" 永远进不去全屏。
+   所以全屏失败时电影模式照样要能用，否则一进 iframe 整个功能就废了。 */
+const CIN = { on:false, timer:0, wasFs:false };
+const fsOn = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+function cinWake(){
+  document.documentElement.classList.add('over');
+  if (CIN.timer) clearTimeout(CIN.timer);
+  CIN.timer = setTimeout(() => document.documentElement.classList.remove('over'), 2600);
+}
+function exitCinema(){
+  CIN.on = false;
+  if (CIN.timer) { clearTimeout(CIN.timer); CIN.timer = 0; }
+  document.documentElement.classList.remove('cin', 'over');
+  if (fsOn()){ try { (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch(e){} }
+}
+function enterCinema(){
+  CIN.on = true;
+  CIN.wasFs = false;
+  document.documentElement.classList.add('cin');
+  // ⚠️ 必须在**这一拍里同步调用**。前面只要有任何 await / Promise，
+  //    用户手势的 activation 就过期了，浏览器直接拒绝 ——
+  //    而拒绝是静默的，表现为「点了没反应」。
+  const el = $('wrap');
+  if (!fsOn()){
+    try {
+      if (el.requestFullscreen) el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    } catch(e){}   // 没交互 / 策略不允许 / iframe 没放行 —— 都不致命
+  }
+  cinWake();
+}
+$('bCinema').addEventListener('click', () => { CIN.on ? exitCinema() : enterCinema(); });
+// 活动唤醒。pointermove 在拖镜头时连着触发，所以拖动时界面会一直亮着 —— 正是想要的。
+// 循环变量起名 act 而不是 ev：同文件上面已经有一个 `for (const ev of ...)`，
+// 各自成块不冲突，但同名在一个函数里出现两次，判自由变量的人得先想一下作用域。
+for (const act of ['pointermove','pointerdown','wheel','keydown','touchstart'])
+  addEventListener(act, () => { if (CIN.on) cinWake(); }, { passive:true });
+/* Esc 退全屏是浏览器做的。全屏一退出，电影模式必须跟着退 ——
+   否则界面还藏着、而用户已经以为回到普通模式，看着像「按钮全不见了」。
+   ⚠️ 但**不能**把「一进来就收到的、fsOn() 为 false 的 fullscreenchange」
+     也当成用户退出：那是全屏请求**被拒**（用户没交互 / iframe 没放行 /
+     iOS 上对非根元素的全屏限制）之后的回音。那种情况下界面其实已经藏好了，
+     再顺手放出来 = 点一下按钮什么都没发生，而控制台一个错都没有。
+     所以只认「**进过**全屏、现在不在了」这一种，那才是用户真的退出了。
+     修这条之前，本地按钮和 F 键都是「进去 0.5 秒又出来」，
+     而所有静态检查和 harness 全绿 —— 因为当时还没有人真的点过它。
+   ⚠️ 监听必须绑在 **document** 上：这个事件只在 document 上派发，而且**不冒泡**。
+     顶层裸写 addEventListener 等于绑到 window —— 那里永远收不到它，
+     于是 syncFs 一次都不会跑，Esc 退全屏之后界面还藏着，正是上面想防的那个症状。
+     这版写错的时候**所有静态检查都是绿的**，harness 也绿（事件只是没来，
+     什么都没发生，没有异常可报），是 _uistate 的反查 ⑧ 才把它顶出来的 ——
+     而在那之前，紧挨着它的那条断言一直是**恒过**的。 */
+function syncFs(){
+  if (fsOn()){ CIN.wasFs = true; return; }
+  if (CIN.on && CIN.wasFs) exitCinema();
+}
+document.addEventListener('fullscreenchange', syncFs);
+document.addEventListener('webkitfullscreenchange', syncFs);
+addEventListener('keydown', e => {
+  /* F 是**双向**的。面板上写的是「F 电影模式」，那它就得能进也能出；
+     只在 CIN.on 时响应 F 的话，F 只能退不能进 ——
+     提示语在骗人，而这种错静态检查一条都抓不到（按钮和按键都没接错，
+     只是少了一半的语义）。 */
+  if (e.code === 'KeyF'){ e.preventDefault(); CIN.on ? exitCinema() : enterCinema(); return; }
+  /* Esc：全屏时浏览器自己会退（随后 syncFs 把电影模式也带出来）；
+     没在全屏时（比如 iframe 里）Esc 不归浏览器管，得我们自己收。 */
+  if (e.code === 'Escape' && CIN.on && !fsOn()) exitCinema();
+});
 // 时段和天气各是一根独立的线：只动一根，另一根原样留着
 for (const k in TIMES)    $('t_'+k).addEventListener('click', () => applyMood(k, MOOD.wk));
 for (const k in WEATHER) $('w_'+k).addEventListener('click', () => applyMood(MOOD.tk, k));

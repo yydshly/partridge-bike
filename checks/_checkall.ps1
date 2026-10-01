@@ -12,11 +12,27 @@ Set-Location $dir
 # 而它是收尾最显眼、被人照着做的那一行。
 $OUT_DIR_REL = $DIR_OUT.Substring($ROOT.Length + 1)
 $fail = 0
+# ⚠️ 标签里的 'N/20' 全是**手打的**，一共 20 处。而 doccheck ② 数的是
+#    `^Step '` 的**条数**，压根不看标签里的分母 —— 所以将来加了第 21 步，
+#    条数变 21、文档跟着改成 21，可这 20 处标签还写着 /20，
+#    **没有任何东西会报**。这正是 AGENTS.md 记的那条教训
+#    （「_uistate 一直印 34 项而它早已是 50 项」）在同一个项目里复发。
+#
+# 修法不是「记得改」，是**让标签里根本没有可过期的数字**：
+# 分子分母都在这里算出来，调用处写的那串只是会被覆写的装饰。
+# 算出来的值不可能和实际脱节 —— 脱节在结构上就不存在了。
+$stepTotal = ([regex]::Matches([IO.File]::ReadAllText($PSCommandPath), "(?m)^Step\s+'")).Count
+$stepNo = 0
 function Step($name, $block){
+  $script:stepNo++
+  # 剥掉调用处手打的那串编号，剩下的才是步骤名
+  $title = ($name -replace '^\s*\d+\s*/\s*\d+\s*', '').Trim()
+  if (-not $title) { $title = [string]$name }
+  $label = '{0}/{1} {2}' -f $script:stepNo, $script:stepTotal, $title
   Write-Output ''
-  Write-Output ("========== {0} ==========" -f $name)
+  Write-Output ("========== {0} ==========" -f $label)
   & $block
-  if ($LASTEXITCODE -ne 0) { $script:fail++; Write-Output ("  >>> {0} 退出码 {1}" -f $name, $LASTEXITCODE) }
+  if ($LASTEXITCODE -ne 0) { $script:fail++; Write-Output ("  >>> {0} 退出码 {1}" -f $label, $LASTEXITCODE) }
 }
 # ⚠️ 第二个参数**必须叫 $Path**：调用处写的是 `& $ps $S_SYNTAX -Path $APP`，
 #    命名参数按名字绑定。之前写成 $p，`-Path` 匹配不上就被丢进 $args，

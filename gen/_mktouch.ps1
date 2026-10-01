@@ -32,8 +32,16 @@ if ($i -lt 0) { throw '找不到最后的 `n})();`，注入点定位失败' }
 
 $probe = @'
 /* ═══ 窄屏 / 触屏手势体检（_mktouch.ps1 注入，只存在于 _touchharness.html）═══ */
+/* ⚠️ 整个体检体外面必须包一层「异常也出结论」。
+   之前没有，于是任何一个 await 抛异常（iframe 的 load 事件在后台标签页里不触发、
+   getComputedStyle 撞到 null……）的后果是：**整页一行输出都没有、标题也不变**，
+   看起来像「还没跑完」，实际上是早就死了。而「还在跑」和「已经死了」
+   在屏幕上长得一模一样 —— 这正是这个项目反复交的学费。
+   所以：阶段名实时写进标题，异常也要渲染成一条 FAIL。 */
+const R = [];                      // 提到 async 外面：catch 里要读它，
+                                   // 否则「已经跑完多少条」在异常时根本报不出来
 (async function(){
-const R = [];
+const stage = s => { document.title = '…' + s; };
 const ok   = (c,n,d) => R.push([!!c, n, d===undefined ? '' : String(d)]);
 const info = (n,d)   => R.push(['I', n, d===undefined ? '' : String(d)]);
 const close = a => Math.abs(a) < 1e-9;
@@ -207,6 +215,7 @@ async function measure(css, c){
   return out;
 }
 
+stage('量常规布局');
 for (const c of CASES){
   const m = await measure(cssText, c);
   info(c.tag + ' ' + c.w + '×' + c.h, '最右 ' + m.maxR + 'px（' + m.worst + '）· 小按钮 '
@@ -249,6 +258,69 @@ for (const c of CASES){
   }
 }
 
+/* ══════════════ 电影模式 ══════════════
+   电影模式是本轮新增的「看得见」的功能，而看得见的东西一旦只靠人眼看，
+   下次改布局就没人知道它有没有坏。所以它也得有判据。
+   量法和上面一样：把**成品里真实的 CSS 和 #wrap 的真实 DOM** 搬进 iframe，
+   给 documentElement 挂上 .cin，然后量真实矩形和真实 computed style。 */
+
+/* ⚠️ 必须先把 transition 关掉再量。.hud/.hint 的淡出淡出是 .45s 的 transition，
+   而 getComputedStyle 返回的是**当前动画值**而不是目标值 ——
+   刚挂上 .cin 就去读 opacity，读到的是还没开始淡的 1，判据于是恒过。
+   这不是「量得不准」，是量到的是另一条时间线上的东西。
+   transition 本身是观感，不在判据范围内（人眼看），判据只管目标状态。 */
+const CSS_STILL = cssText + '\n*{transition:none !important;animation:none !important}';
+
+async function measureCinema(css, c){
+  const f = document.createElement('iframe');
+  f.setAttribute('aria-hidden','true');
+  f.style.cssText = 'width:' + c.w + 'px;height:' + c.h + 'px;border:0;position:absolute;left:-99999px;top:0';
+  document.body.appendChild(f);
+  await new Promise(res => { f.onload = res; f.srcdoc = mkDoc(css); });
+  const d = f.contentDocument, w = f.contentWindow;
+  const cs = sel => { const e = d.querySelector(sel); return e ? w.getComputedStyle(e) : null; };
+  const hgt = () => { const e = d.querySelector('.stage'); return e ? Math.round(e.getBoundingClientRect().height) : -1; };
+  const root = d.documentElement;
+  const out = { panelBefore: cs('.panel') ? cs('.panel').display : '(没有面板)', stageBefore: hgt(), vh: c.h };
+  root.classList.add('cin');
+  out.panel   = cs('.panel')  ? cs('.panel').display  : '(没有面板)';
+  out.err     = cs('#err')    ? cs('#err').display    : '(没有 err)';
+  out.hudOp   = cs('.hud')    ? +cs('.hud').opacity   : -1;
+  out.hudDur  = cs('.hud')    ? cs('.hud').transitionDuration : '?';
+  out.capOp   = cs('.cap')    ? +cs('.cap').opacity   : -1;
+  out.bodyPad = cs('body')    ? cs('body').paddingTop : '?';
+  out.stageCin = hgt();
+  root.classList.add('over');
+  out.hudOpOver = cs('.hud') ? +cs('.hud').opacity : -1;
+  root.classList.remove('cin', 'over');
+  out.panelAfter = cs('.panel') ? cs('.panel').display : '(没有面板)';
+  out.stageAfter = hgt();
+  f.remove();
+  return out;
+}
+
+for (const c of CASES){
+  if (!(c.w === 390 || c.w === 852 || c.w === 1280)) continue;   // 三档代表：竖手机 / 横手机 / 桌面
+  stage('电影模式 ' + c.tag + ' ' + c.w + '×' + c.h);
+  const m = await measureCinema(CSS_STILL, c);
+  const tag = c.tag + ' ' + c.w + '×' + c.h;
+  ok(m.panelBefore !== 'none', tag + '：进电影模式**之前**面板是在的（好样本不误伤）',
+     'display=' + m.panelBefore);
+  ok(m.panel === 'none' && m.err === 'none', tag + '：电影模式下面板和错误框都收起来了',
+     '.panel=' + m.panel + ' #err=' + m.err);
+  ok(m.hudOp === 0, tag + '：HUD 淡出到全透明（只留画面）', 'opacity=' + m.hudOp);
+  ok(Math.abs(m.stageCin - m.vh) <= 2, tag + '：舞台铺满视口高度（不是留了一条边）',
+     '舞台高 ' + m.stageCin + 'px / 视口高 ' + m.vh + 'px，差 ' + (m.stageCin - m.vh) + 'px');
+  ok(m.hudOpOver === 1, tag + '：动一下之后（.over）HUD 淡回来，还能操作',
+     'opacity=' + m.hudOpOver);
+  ok(m.panelAfter === m.panelBefore, tag + '：退出电影模式后面板原样回来',
+     m.panelBefore + ' → ' + m.panel + ' → ' + m.panelAfter);
+  /* 台词是**内容**不是界面：藏掉它，画面里就只剩一只鸟在骑，
+     这个角色全部的性格都没了。所以这一条是钉住「别顺手一起藏了」。 */
+  ok(m.capOp > 0.9, tag + '：台词仍然留着（内容不是界面，别一起藏掉）', '.cap opacity=' + m.capOp);
+}
+
+stage('反查');
 /* ═══ 反查 ═══
    上面每一条布局判据读的都是 iframe 里的真实矩形。最大的风险不是「判据错了」，
    而是「量到的全是 0，所以恒过」——那种情况下它会一路全绿而什么也没量到。
@@ -295,6 +367,32 @@ ok(cssNoMedia !== cssText && cssNoMedia.length < cssText.length,
   pev('pointerup', 1, 620, 300);
 }
 
+/* 电影模式的反查，方向同样是「装回旧的」：
+   把 CSS 里所有 `.cin` 选择器改名，让它们一条都匹配不上 ——
+   效果就是「电影模式这套 CSS 根本不存在」，也就是本轮改动之前的样子。 */
+{
+  const cssNoCin = cssText.replace(/\.cin\b/g, '.cinXX');
+  ok(cssNoCin !== cssText, '反查 ⑥：把 .cin 改名之后 CSS 真的变了',
+     '原 ' + cssText.length + ' 字 → 剩 ' + cssNoCin.length + ' 字');
+  const m = await measureCinema(cssNoCin + '\n*{transition:none !important;animation:none !important}', CASES[0]);
+  ok(m.panel !== 'none', '反查 ⑦：没有电影模式 CSS → 面板收不起来（第 2 条量的是它）',
+     '.panel display=' + m.panel);
+  ok(m.hudOp === 1, '反查 ⑧：没有电影模式 CSS → HUD 不会淡出（第 3 条量的是它）',
+     '.hud opacity=' + m.hudOp);
+  ok(Math.abs(m.stageCin - m.vh) > 2, '反查 ⑨：没有电影模式 CSS → 舞台铺不满（第 4 条量的是满屏）',
+     '舞台高 ' + m.stageCin + 'px / 视口高 ' + m.vh + 'px');
+  /* 反查 ⑩：判据必须先关掉 transition，否则量到的是**动画当前值**而不是目标值。
+     这里量的是一个**确定的事实**（过渡时长非零），不是「跑得够快还是慢」——
+     第一版写成「开着过渡时 opacity 读到 1」，那是拿时序当判据，
+     在慢机器上就可能读到 0.5，两边都不对。
+     量时长则永远稳定，而且它直接说明了「为什么必须关」。 */
+  const mAnim = await measureCinema(cssText, CASES[0]);   // 不加 !important 关动画
+  const dur = mAnim.hudDur || '';
+  ok(dur !== '' && dur !== '0s' && dur !== '0s, 0s',
+     '反查 ⑩：HUD 确实有过渡（非 0s）→ 不关掉它，opacity 读到的是动画值而不是目标值',
+     '.hud transition-duration=' + dur);
+}
+
 /* ── 输出 ── */
 const bad = R.filter(x => !x[0] && x[0] !== 'I');
 const passN = R.filter(x => x[0] === true).length, totalN = R.filter(x => x[0] !== 'I').length;
@@ -316,7 +414,23 @@ if (!box){ box = document.createElement('pre'); box.id = 'touchcheck';
   document.body.appendChild(box); }
 box.innerHTML = h;
 document.title = (bad.length ? 'FAIL ' : 'PASS ') + passN + '/' + totalN;
-})();
+/* 异常也算一种结论。写清楚「不完整」而不是让页面保持原样 ——
+   保持原样的话，标题还是产品名、人只会以为页面没加载完，
+   于是把这一轮当成「没结果」而不是「有结果：体检崩了」。 */
+})().catch(e => {
+  document.title = 'HARNESS-ERROR';
+  let b = document.getElementById('touchcheck');
+  if (!b){
+    b = document.createElement('pre'); b.id = 'touchcheck';
+    b.style.cssText = 'position:fixed;inset:0;z-index:99999;overflow:auto;margin:0;padding:14px;'
+                    + 'background:#2a0d0d;color:#ffb4b4;font:12px/1.5 Consolas,monospace;white-space:pre-wrap';
+    document.body.appendChild(b);
+  }
+  b.textContent = '体检体抛异常，这一轮结果**不完整**（不是「还在跑」）：\n\n'
+                + (e && e.stack ? e.stack : String(e))
+                + '\n\n—— 崩之前已经跑完的 ' + R.filter(x => x[0] !== 'I').length + ' 条 ——\n'
+                + R.map(x => (x[0] === 'I' ? 'INFO' : (x[0] ? 'PASS' : 'FAIL')) + '  ' + x[1]).join('\n');
+});
 '@
 
 $t = $t.Substring(0, $i) + "`n" + $probe + $t.Substring($i)
