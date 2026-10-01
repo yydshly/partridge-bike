@@ -233,7 +233,7 @@
      pointer-events 也跟着走：不然一条看不见的浮条会躺在画面正中下方，
      把「拖镜头」的手势全吃掉（它在 .stage 里，压在路面上）。 */
   .cinebar{
-    display:none; position:absolute; right:20px; bottom:20px;
+    display:none; position:absolute; left:20px; bottom:20px;
     gap:7px; align-items:center; padding:7px 11px;
     background:#0b0f16b8; border:1px solid #ffffff1a; border-radius:999px;
     backdrop-filter:blur(7px);
@@ -250,11 +250,15 @@
   /* ── 侧边小框：曲名 + 歌词 ──────────────────────────────
      面板藏了以后，这是唯一能看见「现在放的是哪首」的地方
      （曲名原来只写在面板的 #hBgm 上，面板一藏就没了）。
-     .lyric 本身在里面被改成 position:static，位置完全交给这个壳。 */
+     .lyric 本身在里面被改成 position:static，位置完全交给这个壳。
+     ⚠️ 放在**右下角**，不放在右侧正中：竖着摆在正中会横穿画面、
+        一直挡着鹧鸪骑行的视线（第一次做就是这么放的，看一眼就发现挡）。
+        浮条相应挪到左下角 —— 底部于是分成
+        「左浮条 / 中台词 / 右侧边框」三块，谁也不压谁。 */
   .cin .sidebox{
     display:block; position:absolute;
     right:max(20px, env(safe-area-inset-right));
-    top:50%; transform:translateY(-50%);
+    bottom:20px;
     width:min(280px, 30vw); padding:12px 16px;
     background:#0b0f16a6; border:1px solid #ffffff1a; border-radius:14px;
     backdrop-filter:blur(7px); pointer-events:none;
@@ -268,12 +272,15 @@
     position:static; left:auto; right:auto; bottom:auto; transform:none;
     padding:0; text-align:left; font-size:15px; line-height:1.7; letter-spacing:.04em;
   }
-  /* 窄屏/矮屏：侧边框会吃掉半个画面，所以缩窄、挪到顶部，字号跟着降。
+  /* 窄屏/矮屏：侧边框会吃掉半个画面，所以缩窄，字号跟着降。
+     竖屏（≤820 宽）例外：390px 装不下「左浮条 + 右侧边框」并排
+     （256 + 210 = 466 > 390），所以竖屏把侧边框放回**右上角**，底下留给浮条。
+     横屏（852×390）放得下，仍在右下角。
      电影模式的规则写在媒体查询**之后**，所以这里必须重新写一遍 ——
      光靠前面那两条 max-width 覆盖不到它们。 */
   @media (max-width:820px){
     .cin .sidebox{ width:min(210px, 52vw); right:max(10px, env(safe-area-inset-right));
-                   top:66px; transform:none; padding:9px 12px }
+                   top:66px; bottom:auto; padding:9px 12px }
     .cin .lyric{font-size:13.5px; line-height:1.6}
     .cin .sb-t{font-size:11px; margin-bottom:4px}
     /* ⚠️ 竖屏上浮条（256px 宽，占 390 的三分之二）和居中台词**必然**撞上：
@@ -283,10 +290,10 @@
     .cin .cap{bottom:78px}
   }
   @media (max-height:560px){
-    .cin .sidebox{ top:50px; width:min(190px, 32vw); padding:7px 11px }
+    .cin .sidebox{ bottom:10px; width:min(190px, 32vw); padding:7px 11px }
     .cin .lyric{font-size:12.5px; line-height:1.55}
     .cin .sb-t{font-size:10.5px; margin-bottom:3px}
-    .cin .cinebar{right:12px; bottom:10px; padding:5px 8px; gap:5px}
+    .cin .cinebar{left:12px; bottom:10px; padding:5px 8px; gap:5px}
     .cb{min-width:34px; min-height:28px; font-size:12px; padding:3px 8px}
   }
 </style>

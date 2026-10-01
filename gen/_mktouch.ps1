@@ -376,14 +376,36 @@ for (const c of CASES){
     const inView = o => o.l >= -1 && o.t >= -1 && o.r <= vw + 1 && o.b <= vh + 1;
     ok(inView(b) && inView(x), tag + '：两个盒子整个都在视口里（不能有一半在屏幕外）',
        '视口 ' + vw + '×' + vh + ' / bar ' + JSON.stringify(b) + ' / sidebox ' + JSON.stringify(x));
-    ok(b.r > vw * 0.5 && b.b > vh * 0.5,
-       tag + '：浮条在**右下角**（不压住画面中心那只鸟）',
-       'bar 右 ' + b.r + '/' + vw + '，下 ' + b.b + '/' + vh);
+    /* 浮条在下方，而且**横着不越过画面中线** —— 中线是鹧鸪在的地方。
+       不写死「左」还是「右」：它现在是左下角，但断言真正要说的是
+       「不许横穿中心」，位置换了这条也不用改。
+       ⚠️ 但这条性质**在竖屏上不成立**，第一版把它写成无条件的，
+          结果 390px 竖屏直接判红 —— 浮条 5 个按钮最窄 256px，
+          而半屏只有 195px。塞不下就是塞不下，判据不能假装它塞得下。
+          所以先问「它塞得进半屏吗」：塞得进才要求不跨中线；
+          塞不进的档位把「不适用」写进消息里，别让人以为它逃过了检查。
+          将来浮条哪天变窄到 195 以下，这条会在竖屏自动开始生效。 */
+    const halfFits = (b.w + 40) <= vw / 2;
+    const crossesMid = b.l < vw / 2 && b.r > vw / 2;
+    ok(b.b > vh * 0.5 && (!halfFits || !crossesMid),
+       tag + '：浮条在**下方**'
+          + (halfFits ? '，且不横穿画面中线（不挡鹧鸪）'
+                      : '（这一档浮条 ' + b.w + 'px 宽，半屏只有 ' + Math.round(vw / 2)
+                         + 'px，物理上放不下，「不跨中线」这条不适用）'),
+       'bar ' + JSON.stringify(b) + ' / 视口 ' + vw + '×' + vh);
     /* 侧边框不能盖住正中间：0.35 而不是 0.5，因为竖屏那条窄屏规则
        会把它压到 52vw 宽，盒子左沿本来就在中线左边一点点。 */
     ok(x.l > vw * 0.35 && x.r <= vw + 1,
        tag + '：侧边框贴着**右边**，且不吃掉画面正中',
        'sidebox 左 ' + x.l + '，视口宽 ' + vw + '（要求 >' + Math.round(vw * 0.35) + '）');
+    /* ⚠️ 这条是从**真人的反馈**来的，不是从设计稿：第一版把它竖着摆在
+       右侧正中（top:50%），一眼就发现它横穿画面、一直挡着鹧鸪。
+       所以钉的是「**不许待在竖向中间那条带子里**」——
+       桌面/横屏在右下角、竖屏在右上角，两边都算过，但正中不行。 */
+    ok(x.b < vh * 0.45 || x.t > vh * 0.55,
+       tag + '：侧边框**不在竖向正中**（挡视线的那条带子，上下都算，但中间不行）',
+       'sidebox 顶 ' + x.t + ' 底 ' + x.b + ' / 视口高 ' + vh
+       + '（中间带 ' + Math.round(vh * 0.45) + '–' + Math.round(vh * 0.55) + '）');
     const hit = (p, q) => p.l < q.r && q.l < p.r && p.t < q.b && q.t < p.b;
     ok(!hit(b, x), tag + '：浮条和侧边框**不重叠**（两个都看不见是它们的活）',
        JSON.stringify(b) + ' vs ' + JSON.stringify(x));
@@ -470,6 +492,35 @@ ok(cssNoMedia !== cssText && cssNoMedia.length < cssText.length,
      '.cinebar display=' + m.barD);
   ok(m.boxD === 'contents', '反查 ⑫：没有电影模式 CSS → 侧边框不会变成盒子（量它的那几条量的就是它）',
      '.sidebox display=' + m.boxD);
+}
+
+/* 反查 ⑬⑭：上面那两条**位置**判据也得抓得住。
+   ⑪⑫ 只拆了「浮条/侧边框在不在」—— 位置判据最典型的恒过形态是
+   「量到的矩形一直是同一个数，条件恰好成立」。所以把两样东西各自
+   摆回**正中**：浮条水平居中（横穿中线）、侧边框垂直居中（待在中间带）。
+   方向是「摆成坏的」，不是把状态弄脏。
+   两条都挑**桌面档**量 —— 那是 halfFits 成立、判据真正生效的地方。 */
+{
+  const cDesk = CASES.find(c => c.w === 1280);
+  ok(!!cDesk, '反查前提：三档里有桌面那一档（1280）', '没找到就说明下面的反查在偷懒');
+  if (cDesk){
+    const barMid = CSS_STILL
+      + '\n.cin .cinebar{left:50% !important;right:auto !important;transform:translateX(-50%)}';
+    const mb = await measureCinema(barMid, cDesk);
+    const b2 = mb.barRect, vw2 = mb.vw;
+    ok(b2 && b2.l < vw2 / 2 && b2.r > vw2 / 2,
+       '反查 ⑬：浮条摆回水平居中 → 「不横穿中线」那条真的会红（不是恒过）',
+       'bar=' + JSON.stringify(b2) + ' / 半屏 ' + Math.round(vw2 / 2) + 'px');
+
+    const boxMid = CSS_STILL
+      + '\n.cin .sidebox{top:50% !important;bottom:auto !important;transform:translateY(-50%)}';
+    const mx = await measureCinema(boxMid, cDesk);
+    const x2 = mx.boxRect, vh2 = mx.vh;
+    ok(x2 && !(x2.b < vh2 * 0.45 || x2.t > vh2 * 0.55),
+       '反查 ⑭：侧边框摆回垂直居中（第一版的老样子）→「不在竖向正中」那条真的会红',
+       'sidebox=' + JSON.stringify(x2) + ' / 视口高 ' + vh2 + 'px'
+       + '（中间带 ' + Math.round(vh2 * 0.45) + '–' + Math.round(vh2 * 0.55) + '）');
+  }
 }
 
 /* ── 输出 ── */
