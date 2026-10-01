@@ -236,12 +236,20 @@ uok(afterDrag.lit.length === 0,
   const q0 = { az: CAM.az, pol: CAM.pol, dist: CAM.dist, tSec: S.tSec };
   frame(); frame(); frame();                            // 掉三帧
   const q1 = { az: CAM.az, pol: CAM.pol, dist: CAM.dist, tSec: S.tSec };
-  uok(q1.az === q0.az && q1.pol === q0.pol && q1.dist === q0.dist,
-     '暂停中点机位预设：镜头**一个比特都没动**（平滑插值也必须停）',
+  uok(q1.az !== q0.az || q1.pol !== q0.pol || q1.dist !== q0.dist,
+     '暂停中点机位预设：镜头**要动**（视角不是仿真的组成部分）',
      'az ' + q0.az.toFixed(6) + ' → ' + q1.az.toFixed(6)
      + '  pol ' + q0.pol.toFixed(6) + ' → ' + q1.pol.toFixed(6)
      + '  dist ' + q0.dist.toFixed(6) + ' → ' + q1.dist.toFixed(6));
-  uok(q1.tSec === q0.tSec, '暂停中时钟也停', q0.tSec + ' → ' + q1.tSec);
+  uok(q1.tSec === q0.tSec, '暂停中时钟也停（仿真停，这条不能松）', q0.tSec + ' → ' + q1.tSec);
+  /* 自动环绕是**行为**不是视角，暂停时必须停 —— 否则就是「画面在背后偷跑」，
+     实测暂停 3 秒 camAz 转了 0.96 rad。
+     ⚠️ 探针里 dt≈0，漂移量不出来（跑 400 帧那种量法这里不能用），
+        所以这条去看源码里那句 gate 还在不在。 */
+  uok(/S\.running\s*&&\s*CAM\.spin/.test(frame.toString()),
+     '自动环绕仍然跟着 S.running 停（它是行为，不是视角）',
+     'frame() 里那一句现在是：' +
+     (frame.toString().match(/if \([^)]*CAM\.spin[^)]*\)/) || ['（没找到）'])[0]);
   el('bPlay').click();                                  // 恢复
   frame();
   uok(CAM.az !== q1.az, '恢复之后镜头补滑到暂停时选的机位（那才是应该的）',
@@ -249,15 +257,18 @@ uok(afterDrag.lit.length === 0,
   el('bSpin').click();
 }
 
-/* ── 3c. 暂停期间能不能拖？拖了算不算数 ──
-   2026-10-02 用户问的。设计意图从 3b 就看出来了：「暂停要的是一张**完全静止**的画」，
-   所以插值被绑在 S.running 上，而**输入不绑** —— 你的拖动被记下来，恢复后兑现。
-   下面这两条把这个约定钉住，免得以后有人「顺手」给拖动也加上 S.running 的门，
-   那样暂停中拖动就变成彻底没反应了（比现在更难解释）。
+/* ── 3c. 暂停期间能不能拖？拖了要不要立刻见效 ──
+   ⚠️ 这三条的理由在 2026-10-02 **整个翻过来了**。
+      原来这里守的是「暂停中拖动画面一个比特都不动，输入先记下、恢复后兑现」，
+      依据是一句我自己写的产品注释：「暂停要的是一张完全静止的画」。
+      用户直接否掉了：「不对啊，暂停的时候这是 3D，鼠标应该可以拖动画面啊」。
+      对的 —— 镜头是**视角**，不是仿真的组成部分。车停了，但「换个角度看看」
+      恰恰是暂停时最该做的事。把视角冻住只会被读成「拖了没反应」。
+      所以：镜头插值不再跟 S.running 绑定；自动环绕仍然停（那是行为不是视角）。
 
-   ⚠️ 量法说明：这里**派真的 PointerEvent 到 cv 上**，不在判据里另抄一份
-      `azT -= dx*0.0072`。抄一份的话，产品那边把系数改了判据照样绿 ——
-      判据和实现两份代码各自漂，是比没有判据更坏的那种坏。 */
+   ⚠️ 量法：派真的 PointerEvent 到 cv 上，不在判据里另抄一份 `azT -= dx*0.0072`。
+      抄一份的话产品改了系数判据照样绿 —— 判据和实现两份代码各自漂，
+      比没有判据更坏。 */
 {
   const ev = (t, x, shift) => cv.dispatchEvent(new PointerEvent(t, {bubbles:true, clientX:x,
                 clientY:300, button: shift ? 2 : 0, buttons:1, pointerId:1, isPrimary:true,
@@ -274,28 +285,23 @@ uok(afterDrag.lit.length === 0,
   uok(Math.abs(o1.azT - o0.azT) > 0.2,
      '暂停中拖动**被记录**（azT 真的被拖偏了 —— 否则就是拖压根没接上）',
      'azT ' + o0.azT.toFixed(3) + ' → ' + o1.azT.toFixed(3));
-  uok(o1.az === o0.az,
-     '暂停中拖动画面**一个比特都不动**（暂停 = 一张完全静止的画）',
-     'az ' + o0.az.toFixed(6) + ' → ' + o1.az.toFixed(6) + '，同一时刻 azT 已经挪了 ' +
-     (o1.azT - o0.azT).toFixed(3) + ' rad');
-  /* 平移是**另一条路**，约定可能不一样：camPan() 直接改 CAM.target，
-     而 camera.position.set() 每帧都读 CAM.target —— 那一句不在 if (S.running) 里。
-     所以环绕「拖了没反应」、平移「拖了立刻动」，同一个拖字两种反应。
-     这里把 CAM.target 的变化量出来：变了就说明平移这条路绕过了静止约定。 */
+  uok(o1.az !== o0.az,
+     '暂停中拖动画面**立刻跟着动**（这就是 3D：暂停 ≠ 冻住视角）',
+     'az ' + o0.az.toFixed(6) + ' → ' + o1.az.toFixed(6) + '，方向和幅度跟着 azT 的 ' +
+     (o1.azT - o0.azT).toFixed(3) + ' rad。旧版本这里 az 一个比特都不动，' +
+     '用户读到的就是「拖了没反应」');
+  /* 平移（右键/双指）走 camPan()，它**直接**改 CAM.target，而 camera.position.set()
+     每帧都读它 —— 所以它从来就不受暂停约束。两条路现在行为一致了。 */
   ev('pointerdown', 600, true);
   ev('pointermove', 700, true);
-  const p1 = CAM.target.x;
-  uok(Math.abs(p1 - o1.tx) > 1e-6,
-     '平移（右键/双指）走的是另一条路：它直接改 CAM.target，**不受暂停约束**',
-     'CAM.target.x ' + o1.tx.toFixed(6) + ' → ' + p1.toFixed(6) +
-     '（暂停中）。而 camera.position.set() 每帧读它、不在 if (S.running) 里，' +
-     '所以这一种拖动在暂停时是**立刻生效**的 —— 和左键环绕的行为不一致');
+  uok(Math.abs(CAM.target.x - o1.tx) > 1e-6,
+     '平移（右键/双指）在暂停中同样立刻生效（与环绕一致，不再有两套反应）',
+     'CAM.target.x ' + o1.tx.toFixed(6) + ' → ' + CAM.target.x.toFixed(6) + '（暂停中）');
   CAM.dragging = false;
   el('bPlay').click();                                   // 恢复
   frame();
-  uok(CAM.az !== o1.az, '恢复之后才兑现刚才那个拖动（记下来的输入不算丢）',
-     'az ' + o1.az.toFixed(6) + ' → ' + CAM.az.toFixed(6) + '，暂停时你拖到的目标是 ' +
-     o1.azT.toFixed(3));
+  uok(CAM.az !== o1.az, '恢复播放后视角继续跟着拖动走（没有断层）',
+     'az ' + o1.az.toFixed(6) + ' → ' + CAM.az.toFixed(6) + '，目标 ' + CAM.azT.toFixed(3));
   el('bSpin').click();
 }
 
