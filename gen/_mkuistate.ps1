@@ -545,6 +545,110 @@ uok(afterDrag.lit.length === 0,
   }
 }
 
+/* ── 5. 六段各有各的光 ──
+   段专属物件分六段了，光却是全局一套 —— 严格说还是「一条路的六段」。
+   applySegLight 在 composeMood 算完之后叠一层修正，**不碰那张全局表**。
+   下面这几条钉的是「层」的行为：段内取值、加权平均、跨段连续、与天气/时段正交。 */
+{
+  /* 固定一个已知的天气/时段，后面所有数都从它推，别拿当前状态当基线 */
+  applyMood('day', 'clear');
+  const m0 = MOOD;
+  const center = ROUTE.map((s,i) => s.at + s.km*0.5);
+  const probe  = () => { const o = [];
+    for (const km of center){ applySegLight(km);
+      o.push({ km, dir:dir.intensity, hemi:hemi.intensity,
+               far:scene.fog.far, exp:renderer.toneMappingExposure,
+               cr:dir.color.r, cb:dir.color.b }); }
+    return o; };
+  const P = probe();
+
+  /* ① 六个段的直射光必须**两两不同**，且都等于该段档案值 × 全局值。
+        段内只有这一段的存在度是 1，加权平均必然精确等于档案值 ——
+        这条同时钉住了「加权平均没有写成累加」。 */
+  const pairs = P.map((p,i) => p.dir - m0.dirI * SEGLIGHT[i].dir);
+  uok(pairs.every(d => Math.abs(d) < 1e-6),
+     '段内取值 = 全局值 × 该段档案值（加权平均，不是累加）',
+     '六段偏差：' + pairs.map(d => d.toExponential(1)).join(' '));
+  uok(new Set(P.map(p => p.dir.toFixed(4))).size === P.length,
+     '六段的直射光两两不同（' + P.map(p => p.dir.toFixed(2)).join(' / ') + '）',
+     P.map((p,i) => ROUTE[i].name + ':' + p.dir.toFixed(2)).join(' '));
+
+  /* ② 两条真正在画面上说得通的对比，而不是「数值不一样就行」：
+        林荫头顶有树冠，直射光必须明显低于开阔的河堤/长桥；
+        长桥最开阔，雾的远端必须比林荫远。 */
+  const byName = n => P[ROUTE.findIndex(s => s.name === n)];
+  uok(byName('林荫').dir < byName('河堤').dir * 0.75,
+     '林荫的直射光明显低于河堤（树冠把太阳挡掉大半，否则「隧道」只是两排树）',
+     '林荫 ' + byName('林荫').dir.toFixed(2) + ' vs 河堤 ' + byName('河堤').dir.toFixed(2));
+  uok(byName('长桥').far > byName('林荫').far,
+     '长桥的雾看得比林荫远（桥上最开阔）',
+     '长桥 ' + byName('长桥').far.toFixed(0) + ' vs 林荫 ' + byName('林荫').far.toFixed(0));
+  uok(byName('镇子').cr - byName('镇子').cb > byName('长桥').cr - byName('长桥').cb,
+     '镇子的光比长桥暖（土墙瓦顶；用红蓝差当暖度的可观测代理）',
+     '镇子 暖度=' + (byName('镇子').cr - byName('镇子').cb).toFixed(3)
+     + '  长桥 暖度=' + (byName('长桥').cr - byName('长桥').cb).toFixed(3));
+
+  /* ③ 跨段界必须**连续**：村口→河堤那一段，篱笆在矮、芦苇在长，
+        光也得跟着滑过去，不能在段界上跳一档。 */
+  {
+    const b = ROUTE[0].at + ROUTE[0].km;              // 村口/河堤的界
+    let prev = null, mono = true, tr = [];
+    for (let d = -SEG_BLEND; d <= SEG_BLEND + 1e-9; d += SEG_BLEND*0.2){
+      applySegLight(b + d);
+      const v = dir.intensity;
+      tr.push(d.toFixed(2) + ':' + v.toFixed(3));
+      if (prev !== null && v < prev - 1e-9) mono = false;   // 离开林荫方向应是单调上升
+      prev = v;
+    }
+    uok(mono, '跨段界光连续，没有跳档：' + tr.join(' '),
+       '段界 ' + b.toFixed(2) + ' km，d 从 -0.15 到 +0.15');
+  }
+
+  /* ④ 与天气/时段**正交**：下雨的林荫该是「暗的雨天」，不是「另一个雨天」；
+        切到夜晚，六段的相对关系必须照样成立。这一条最容易被「直接改
+        composeMood 的表」的实现破坏 —— 那种做法会让 450 项 mood 回归集体变红，
+        而那说明它改错了地方。 */
+  {
+    applyMood('day', 'rain');
+    const R = [];
+    for (const km of center){ applySegLight(km); R.push(dir.intensity); }
+    uok(R[ROUTE.findIndex(s=>s.name==='林荫')] < R[ROUTE.findIndex(s=>s.name==='河堤')] * 0.75,
+       '下雨天林荫照样比河堤暗（段的光是叠在天气之上的，不是替代天气）',
+       R.map((v,i) => ROUTE[i].name + ':' + v.toFixed(2)).join(' '));
+    applyMood('night', 'clear');
+    const N = [];
+    for (const km of center){ applySegLight(km); N.push(dir.intensity); }
+    uok(N[ROUTE.findIndex(s=>s.name==='林荫')] < N[ROUTE.findIndex(s=>s.name==='河堤')] * 0.75,
+       '夜晚林荫照样比河堤暗（八段关系与时段无关）',
+       N.map((v,i) => ROUTE[i].name + ':' + v.toFixed(2)).join(' '));
+    applyMood('day', 'clear');
+  }
+
+  /* ⑤ 每帧真的调用了。applySegLight 是个函数，写对了不叫就等于没有 ——
+        和 applyBands 同一类问题，所以单独钉一条。 */
+  {
+    /* ⚠️ 取样点原来选的是「村口/河堤交界」和「长桥」，红在 1.134 → 1.134。
+       那两处的档案倍率是 1.076 和 1.08 —— 本来就几乎一样，差 0.004，
+       却拿 0.05 当门槛。**判据的取样点必须挑有量程的那两个**，
+       挑两个天然接近的点，等于在测噪声。
+       这里改用林荫（0.42），差一个数量级。 */
+    const a = ROUTE[0].at + ROUTE[0].km + SEG_BLEND*0.5;   // 界后一点：半档
+    applySegLight(a);
+    const want = dir.intensity;
+    S.km = ROUTE[2].at + ROUTE[2].km*0.5;                  // 挪到林荫
+    S.seg = segAt(S.km);
+    frame();
+    uok(Math.abs(dir.intensity - want) > 0.2,
+       'frame() 每帧把光带着 km 走：tick 一次后 dir 从 ' + want.toFixed(3)
+       + ' 变成 ' + dir.intensity.toFixed(3),
+       'km=' + S.km.toFixed(2) + '（林荫，档案 0.42）');
+    applySegLight(a);
+  }
+  R.push(['I', '—— 六段光档案实测 ——',
+    ROUTE.map((s,i) => s.name + ' dir×' + SEGLIGHT[i].dir + ' hemi×' + SEGLIGHT[i].hemi
+                      + ' far×' + SEGLIGHT[i].fogFar).join('\n')]);
+}
+
 /* ── 输出 ── */
 const bad = R.filter(x => !x[0] && x[0] !== 'I');
 let h = '<h3>' + (R.filter(x => x[0] === true).length) + ' / ' + R.filter(x => x[0] !== 'I').length + ' 通过</h3>';

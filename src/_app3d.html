@@ -3701,16 +3701,21 @@ function routeName(km){ return ROUTE[segAt(km)].name; }
    不归一化的话，骑到第 6 公里时 d 会是 5000，权重恒等于 0，
    表现为「绕一圈之后所有段专属物件再也不出现了」。 */
 const SEG_BLEND = 0.15;                        // km：进出各 150 m 渐变
-function ownW(own, km){
-  let seg = null;
-  for (const s of ROUTE) if (s[own]){ seg = s; break; }
-  if (!seg) return 0;                          // 没有任何一段开它 → 永远不出现
+/* 第 i 段在 km 处「有多少」。段内为 1，出了段界在 SEG_BLEND 内降到 0。
+   抽成按**段号**取，是因为现在有两样东西都要它：段专属物件的权重，
+   以及六段各自的光。共用一个函数才不会出现「物件渐变了、光没渐变」。 */
+function segAmt(i, km){
+  const seg = ROUTE[i];
   let d = (km - seg.at) % ROUTE_LEN;
   if (d < 0) d += ROUTE_LEN;
   if (d > ROUTE_LEN/2) d -= ROUTE_LEN;
   if (d < 0)      return clamp(1 + d/SEG_BLEND, 0, 1);             // 段前：-0.15→0，0→1
   if (d > seg.km) return clamp(1 - (d - seg.km)/SEG_BLEND, 0, 1);  // 段后：末→1，+0.15→0
   return 1;
+}
+function ownW(own, km){
+  for (let i = 0; i < ROUTE.length; i++) if (ROUTE[i][own]) return segAmt(i, km);
+  return 0;                                   // 没有任何一段开它 → 永远不出现
 }
 
 /* 带子权重 —— **每帧**跟着 km 走，段专属带才有那圈渐变。
@@ -3756,6 +3761,63 @@ function applyRoute(i){
     c++;
   }
   for (const g of KM_STONES) g.userData.paint(round1(g.userData.km0), routeName(g.userData.km0));
+}
+
+/* ══════════════════ 六段各有各的光 ══════════════════
+   时段×天气是**全局**的：白天/黄昏/夜晚 × 晴/雨/雪/雾，composeMood 算出一整套，
+   applyMood 一次落到场景上。那张表一个字都不动 —— 段不是去改它，
+   是在它算完之后叠一层**修正**。理由有两个：
+     ① 动了它，450 项 mood 回归就全在盯着一个「六段各自的天时」，
+        而那不是这套表该管的事；
+     ② 段的光要跟天气正交：下雨的林荫该是「暗」而不是「另一个雨天」。
+
+   每段只改四样，不碰天空贴图（每帧重画一张 canvas 贴图太贵）：
+     dir  —— 直射光倍率。林荫压到 0.42 是这里最大的一件：树冠把太阳挡掉大半，
+             不压这一项，「隧道」就只是两排树，看不出头顶有东西。
+     hemi —— 半球光倍率。开阔的地方（河堤/长桥）天空贡献更多。
+     warm/cool —— 色偏。镇子偏暖（墙是土黄 + 瓦），林荫偏冷偏绿。
+     fogFar —— 雾的远端。开敞的长桥看得远，隧道里看得近。
+     exp  —— 曝光。林荫压暗之后要补一点，不然整段发闷。 */
+const SEGLIGHT = [
+  { dir:1.04, hemi:1.02, warm:0.10, cool:0.00, fogFar:1.00, exp:1.00 },  // 村口
+  { dir:1.10, hemi:1.08, warm:0.02, cool:0.07, fogFar:1.08, exp:1.03 },  // 河堤：水边开阔
+  { dir:0.42, hemi:0.90, warm:0.00, cool:0.12, fogFar:0.90, exp:0.94 },  // 林荫：头顶有东西
+  { dir:1.02, hemi:1.00, warm:0.06, cool:0.00, fogFar:1.02, exp:1.00 },  // 长坡
+  { dir:0.86, hemi:1.05, warm:0.17, cool:0.00, fogFar:0.96, exp:1.00 },  // 镇子：土墙瓦顶
+  { dir:1.08, hemi:1.10, warm:0.00, cool:0.04, fogFar:1.12, exp:1.04 }   // 长桥：最开阔
+];
+
+/* 把六段的光按「此刻各占多少」叠回场景。
+   ⚠️ 权重是**按存在度加权的平均**，不是累加 —— 不加权的话骑在段界上
+   两侧各 0.5，光会double 成一片死白。而且加权平均保证：
+   只有一段存在度为 1 时，结果精确等于那一段的档案值（判据就靠这个）。 */
+function applySegLight(km){
+  if (!MOOD) return;
+  const m = MOOD;
+  let dK=0, hK=0, warm=0, cool=0, fK=0, eK=0, w=0;
+  for (let i = 0; i < ROUTE.length; i++){
+    const a = segAmt(i, km), p = SEGLIGHT[i];
+    if (!p || a <= 0) continue;
+    dK += p.dir*a;  hK += p.hemi*a;
+    warm += p.warm*a; cool += p.cool*a;
+    fK += p.fogFar*a; eK += p.exp*a;
+    w += a;
+  }
+  if (w <= 0) return;                      // 离所有段都很远：保持全局那张表
+  dK/=w; hK/=w; warm/=w; cool/=w; fK/=w; eK/=w;
+  dir.intensity = m.dirI * dK;
+  hemi.intensity = m.hemiI * hK;
+  /* 色偏走两步：先按 cool 往青绿推，再按 warm 往琥珀推。
+     顺序有意义 —— 林荫是「树冠滤过的光」（偏绿）再叠一点暖边，
+     反过来就成了傍晚的树林。 */
+  dir.color.setHex(mixHex(mixHex(m.dirCol, 0xbfe0cf, cool), 0xffd9a0, warm));
+  hemi.color.setHex(mixHex(mixHex(m.hemiSky, 0xc8e2d2, cool), 0xffe6bd, warm));
+  hemi.groundColor.setHex(mixHex(mixHex(m.hemiGround, 0x9fb894, cool), 0xd8bd8e, warm));
+  if (scene.fog){
+    scene.fog.far = m.fogFar * fK;
+    scene.fog.color.setHex(mixHex(mixHex(m.fog, 0xc2ddd2, cool), 0xe8d6b4, warm));
+  }
+  renderer.toneMappingExposure = m.exposure * eK;
 }
 
 /* ── 铺地标层：压进雾里当远方 ──
@@ -5242,6 +5304,9 @@ function frame(){
           于是「唰一下全换」只是从 applyRoute 挪到了换段块里，没修掉。
        代价很小：全 BANDS 加起来三百来个 visible 开关，一帧不到 0.05 ms。 */
     applyBands(S.km);
+    /* 段的光同样每帧跟 km 走，理由和上一行一样。排在 applyBands 后面：
+       两者都读 km，谁都不该覆盖谁。 */
+    applySegLight(S.km);
     const wheelRev = v / (2*Math.PI*R_WHEEL);
     S.wheel += wheelRev * Math.PI*2 * dt;
     S.crank += wheelRev * Math.PI*2 * dt;
