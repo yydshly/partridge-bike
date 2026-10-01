@@ -453,29 +453,86 @@ uok(afterDrag.lit.length === 0,
   const bx = new THREE.Box3();
   const bandOf = id => BANDS.find(B => B.id === id);
   const OWNBANDS = ['tunnel','fence','reed','rail','boulder','house'];
+  /* 「这棵的冠往路那边伸出多远」—— ① 和反查 ⑩ 共用同一个出处。
+     判据里另写一份实现，两份会各自漂：改坏这半边，判据照样全绿。 */
+  const reachOf = o => { bx.setFromObject(o);
+                         return o.position.z > -LANE ? (-LANE - bx.min.z) : (bx.max.z + LANE); };
+  const minReachOf = B => B.objs.reduce((m,o) => Math.min(m, reachOf(o)), 1e9);
 
-  /* ① 隧道树必须是**成拱**的：每一棵的树冠都要越过路中心，
+  /* ① 隧道树必须是**成拱**的：每一棵的树冠都要越过路中心线，
         否则就不是隧道，是两排各站各的树。
-        这条钉的是「冠半径 > 树到路中心的距离」这个当初算出来的关系。
-        实测最小冠半径 5.38 m，最近的一棵离路中心 4.31 m —— 有余量。 */
+        ⚠️ 这里必须**按每一棵自己那一侧**算伸过去多远，不能一刀切只看 min.z。
+        我第一版写的判据是 `bx.min.z < -LANE`，可路中心 z = -LANE 是负数，
+        于是站在负侧的树（44 棵里的 22 棵，`side = B.side || (i%2?1:-1)`）
+        的 min.z 恒为负、恒小于 -LANE ⇒ 恒成立。
+        换句话说「44 棵全部成拱」只测了正侧的一半，还绿得毫无破绽。
+        正侧的树要往 -z 伸（看 min.z），负侧的树要往 +z 伸（看 max.z）。
+        细节里两侧的最小伸出量分开打，就是为了再也藏不住「只测了一半」。 */
   {
     const B = bandOf('tunnel');
-    let cross = 0, minR = 1e9, maxD = 0;
+    const rows = [];
     for (const o of B.objs){
-      bx.setFromObject(o);
-      if (bx.min.z < -LANE) cross++;
-      minR = Math.min(minR, (bx.max.z - bx.min.z)/2);
-      maxD = Math.max(maxD, Math.abs(o.position.z - (-LANE)));
+      rows.push({ d: Math.abs(o.position.z - (-LANE)), reach: reachOf(o) });
     }
-    uok(B.objs.length > 0 && cross === B.objs.length,
-       '隧道树成拱：' + cross + '/' + B.objs.length + ' 棵的树冠越过了路中心线',
-       '最小冠 z 向半径 ' + minR.toFixed(2) + ' m；最远那棵离路中心 ' + maxD.toFixed(2) + ' m');
+    const R = rows.map(r => r.reach);
+    const posR = rows.filter((r,i) => B.objs[i].position.z >  -LANE).map(r => r.reach);
+    const negR = rows.filter((r,i) => B.objs[i].position.z <  -LANE).map(r => r.reach);
+    const srt = R.slice().sort((x,y) => x-y);
+    const minOf = a => a.length ? a.reduce((m,v) => Math.min(m,v)) : NaN;
+    const mid   = srt.length ? srt[srt.length >> 1] : NaN;
+    const maxOf = a => a.length ? a.reduce((m,v) => Math.max(m,v)) : NaN;
+    const minReach = minOf(R);
+    const crossed = R.filter(v => v > 0).length;
+    const dist = d => rows.map(r => r.d.toFixed(2)).sort((x,y) => x-y);
+    uok(B.objs.length > 0 && posR.length > 0 && negR.length > 0 && crossed === B.objs.length,
+       '隧道树成拱：' + crossed + '/' + B.objs.length + ' 棵的树冠越过了路中心线（两侧都测了）',
+       '路中心 z=' + (-LANE).toFixed(3) + '；正侧 ' + posR.length + ' 棵，冠最靠内伸到 ' +
+       minOf(posR).toFixed(2) + ' m 越过中心；负侧 ' + negR.length + ' 棵，冠最靠内伸到 ' +
+       minOf(negR).toFixed(2) + ' m 越过中心');
+    /* 这里量的是**分布**，不是「最紧那棵」。
+       踩过的坑值得留着：我第一版拿「最紧那棵伸出 > 0.30 m」当余量门槛，
+       并在注释里写「两侧最小伸出量都远在它之上」—— 实测正侧最小只有 0.18 m，
+       判据当场变红。**那句话是我看着自己想要的数编的**，判据红的是它。
+       而且「44 棵里最紧的一棵」是个尾概率：同侧相邻两棵隔 5.9 m，
+       邻树的冠早就盖过它了，单独一棵 0.18 m 在画面上根本看不出来，
+       拿它当门槛既不贴画面、又逼着人去调参数，纯属自己给自己找事。
+       真正决定「林荫是不是拱」的是**一片**冠盖不盖得住路面上方，
+       所以这里量中位数，门槛按**路面自己的几何**取 —— 半幅 ROAD_W/2 = 1.95 m：
+       冠越过中心线还要再多出小半个路面，才谈得上「盖住路面上方」，
+       而不是刚好碰到中线。这个数是从几何推的，不是从实测凑的。 */
+    uok(mid > ROAD_W/2,
+       '隧道树的**典型**冠盖过路中心线 ' + mid.toFixed(2) + ' m（要求 > 半幅 ' + (ROAD_W/2).toFixed(2) + ' m）',
+       '44 棵伸出量：最小 ' + minReach.toFixed(2) + ' / 中位 ' + mid.toFixed(2) +
+       ' / 最大 ' + maxOf(R).toFixed(2) + ' m；离路中心 ' + dist().slice(0,3).join('~') +
+       '~' + dist().slice(-1)[0] + ' m（定种子布局，数字可复现）');
     /* ⚠️ 这里**故意不再**加一条「最小冠半径 > 最远离路距离」。
        我第一版加了，红在 5.38 > 5.56 —— 但那条量错了东西：
        bbox 的 z 向直径只是「冠最大半径」的下界，而树是随机转过角度的，
        往路那边伸出去多远和 z 向直径不是一回事。
-       真正该问的是「这棵的冠有没有越过路中心」，那就是上面那条。
+       真正该问的是「这棵的冠有没有越过路中心」，那就是上面两条。
        判据必须问画面呈现出什么，不能拿一个相关的量代替它。 */
+  }
+
+  /* ⑩ 反查：把**负侧**那 22 棵的冠缩回树干，看判据会不会红。
+        这正是旧判据看不见的那一半 —— 旧写法是 `bx.min.z < -LANE`，
+        负侧树的 min.z 恒为负、恒小于 -LANE，**缩到 0.4 倍它照样绿**。
+        一条只能测一半的判据比没有判据更坏：它让人以为隧道被守着。
+        这条反查就是钉住「新判据确实两侧都看」。 */
+  {
+    const B = bandOf('tunnel');
+    const neg = B.objs.filter(o => o.position.z < -LANE);
+    const pos = B.objs.filter(o => o.position.z > -LANE);
+    const keep = neg.map(o => o.scale.clone());
+    for (const o of neg){ o.scale.multiplyScalar(0.4); o.updateMatrixWorld(true); }
+    const deadNeg = neg.filter(o => reachOf(o) <= 0).length;
+    const livePos = pos.filter(o => reachOf(o) > 0).length;
+    neg.forEach((o, i) => { o.scale.copy(keep[i]); o.updateMatrixWorld(true); });
+    uok(deadNeg > 0 && livePos === pos.length && neg.length > 0 && pos.length > 0,
+       '反查 ⑩：把负侧的冠缩回树干 → 判据立刻看得见（' + deadNeg + '/' + neg.length + ' 棵不再成拱）',
+       '同一次改动下正侧 ' + livePos + '/' + pos.length + ' 棵仍成拱；旧的 min.z 判据在这里恒绿，缩到 0.4 倍也发现不了');
+    const back = neg.filter(o => reachOf(o) > 0).length;
+    uok(back === neg.length, '反查 ⑩ 收尾：scale 还原后负侧 ' + back + '/' + neg.length + ' 棵恢复成拱（上一条不是靠改参数红的）',
+       '还原后 44 棵全部成拱，最紧的那棵伸出 ' + minReachOf(B).toFixed(2) + ' m');
   }
 
   /* ② 段专属物件**不许压在路面上**。
