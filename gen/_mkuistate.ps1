@@ -271,6 +271,93 @@ uok(afterDrag.lit.length === 0,
      'class=' + root.className);
 }
 
+/* ── 电影模式里的极简控制条 + 侧边小框 ──────────────────────
+   面板藏起来之后，切歌/自动/播放不能跟着一起没 ——
+   沉浸不是把功能丢了，是把它们挪到一个不挡画面的地方。
+   ⚠️ 下面每一条都**真的点那个新按钮**，不靠读 CSS 猜：
+   「按钮摆在那儿、点了没反应」是这一类最常见的交付事故，
+   而它不抛任何异常、也没有任何静态检查会红。 */
+{
+  const root = document.documentElement;
+  const barD = () => getComputedStyle(el('cinebar')).display;
+  const boxD = () => getComputedStyle(el('sidebox')).display;
+  el('bCinema').click();
+  uok(root.classList.contains('cin') && barD() === 'flex',
+     '电影模式里极简控制条真的出现了（不是摆设）', 'class=' + root.className + ' bar=' + barD());
+  uok(boxD() === 'block', '侧边小框真的出现了（曲名 + 歌词）', 'sidebox=' + boxD());
+  /* ⚠️ 前置条件必须先断言。下面「点了没反应」有**两种**可能的原因：
+     按钮没接上，或者音轨压根没就绪（bgmStep 第一行就 return）。
+     不先把 ready 钉死，测出来的红是没法归因的。 */
+  uok(BGM.ready === true, '前置：音轨已就绪（否则「点了没反应」是 ready 的锅，不是按钮的锅）',
+     'ready=' + BGM.ready);
+
+  BGM.i = 0; paintBgm();
+  el('cNext').click();
+  uok(BGM.i === 1, '浮条「下一首」→ 曲号真的 +1', 'i=' + BGM.i);
+  el('cPrev').click();
+  uok(BGM.i === 0, '浮条「上一首」→ 曲号真的 -1', 'i=' + BGM.i);
+  el('bNext').click();
+  uok(BGM.i === 1, '面板的键也还管用（两个入口不是各走各的）', 'i=' + BGM.i);
+  el('bPrev').click();
+
+  /* 这一条是「单一刷新出口」的判据：点浮条的自动键，**面板上那盏灯
+     也必须跟着亮**。两边各画各的就会出现「浮条亮着、面板灭着」，
+     而 BGM.auto 其实只有一个值 —— 谁说了算，界面上不该有第二种答案。 */
+  const a0 = BGM.auto;
+  el('cAuto').click();
+  uok(BGM.auto === !a0 && on('cAuto') === BGM.auto && on('bAuto') === BGM.auto,
+     '浮条「自动」→ 面板那盏灯跟着一起翻（不是两个独立状态）',
+     'auto=' + BGM.auto + ' 浮条=' + on('cAuto') + ' 面板=' + on('bAuto'));
+  el('cAuto').click();
+
+  uok(el('cPlay').textContent.trim() === el('bBgm').textContent.trim(),
+     '浮条播放键字形 = 面板播放键字形（同一个出口算的）',
+     el('cPlay').textContent.trim() + ' / ' + el('bBgm').textContent.trim());
+
+  BGM.started = true; paintBgm();
+  uok(el('sbTitle').textContent.trim() === el('hBgm').textContent.trim()
+      && el('hBgm').textContent.trim().indexOf(BGM_TRACKS[BGM.i].title) === 0,
+     '侧边小框那行曲名 = 面板的曲名（而且真的是当前这首）',
+     el('sbTitle').textContent.trim() + ' / ' + el('hBgm').textContent.trim());
+
+  /* 纯画面：浮条上那个 ⤢ 和 H 键是两条路（手机没键盘时只剩前者） */
+  el('cBare').click();
+  uok(root.classList.contains('bare') && barD() === 'none' && boxD() === 'none',
+     '点「⤢」→ 浮条和侧边框都藏起来，只剩画面', 'class=' + root.className);
+  el('cBare').click();
+  uok(!root.classList.contains('bare') && barD() === 'flex' && boxD() === 'block',
+     '再点一次 → 都回来', 'class=' + root.className);
+  /* ⚠️ 这次派发**必须带 bubbles:true** —— 产品的 keydown 监听挂在 window 上，
+     从 document 派发不冒泡的话事件根本到不了它。
+     （这正是 fullscreenchange 那条教训的反面：那边**不**冒泡，所以只能绑 document。） */
+  document.dispatchEvent(new KeyboardEvent('keydown', { code:'KeyH', bubbles:true }));
+  uok(root.classList.contains('bare'), 'H 键 → 纯画面（手机上没 F 键时的第二条路）',
+     'class=' + root.className);
+  document.dispatchEvent(new KeyboardEvent('keydown', { code:'KeyH', bubbles:true }));
+  uok(!root.classList.contains('bare'), '再按 H → 回来', 'class=' + root.className);
+
+  /* 退出电影模式必须把 bare 复位，否则下一次进来是「什么都没有」，
+     而界面上没有任何东西能解释为什么。 */
+  el('cBare').click();
+  el('bCinema').click();
+  uok(!root.classList.contains('bare') && !root.classList.contains('cin'),
+     '退出电影模式 → bare 跟着复位（下次进来不会是空的）', 'class=' + root.className);
+  BGM.started = false; paintBgm();
+
+  /* 反查 ⑨：装回「旧 painter 只画面板」—— 新出口最可能出的错就是忘了同步。
+     必须破坏**这条判据对应的那个实现**，破坏周边不算数。 */
+  const realPaint = paintBgm;
+  paintBgm = () => { el('bBgm').textContent = (BGM.want && BGM.started) ? '⏸' : '▶';
+                     el('bAuto').classList.toggle('on', BGM.auto); };
+  const a1 = BGM.auto;
+  el('cAuto').click();
+  uok(!(on('bAuto') === on('cAuto') && on('bAuto') === BGM.auto),
+     '反查 ⑨：旧 painter 只画面板 → 「两个出口一起翻」翻 false',
+     'auto=' + BGM.auto + ' 面板=' + on('bAuto') + ' 浮条=' + on('cAuto'));
+  paintBgm = realPaint;
+  BGM.auto = a1; realPaint();
+}
+
 /* ═══ 反查：把**旧的坏代码原样装回去**，同一套判据必须翻 ═══
    ⚠️ 第一版这里写错了方向：只是把状态弄脏、然后仍然调用**修好的**处理器，
       谓词当然还是 true —— 脏状态被修好了，等于什么都没量。

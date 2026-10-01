@@ -183,9 +183,20 @@ async function measure(css, c){
     if (!r.width && !r.height) continue;
     if (r.right > maxR){ maxR = r.right; worst = e; }
   }
-  /* ② 哪个按钮太小 —— 同样点名 */
+  /* ② 哪个按钮太小 —— 同样点名
+     ⚠️ **藏在 display:none 子树里的按钮必须跳过**。电影模式的浮条平时整条
+        display:none，它那五个按钮量出来是 0×0 —— 而 0×0 不是「触控目标太小」，
+        是「这个按钮这一档根本不存在」。混进去之后 5 档全红，
+        而红的原因是判据量错了对象，不是产品做错了。 */
+  const inHidden = e => {
+    for (let n = e; n && n !== d.documentElement; n = n.parentElement){
+      if (w.getComputedStyle(n).display === 'none') return true;
+    }
+    return false;
+  };
   const small = [];
   for (const b of d.querySelectorAll('button')){
+    if (inHidden(b)) continue;
     const r = rect(b);
     if (r.width < c.minTap || r.height < c.minTap) small.push('#' + (b.id || '?') + ' ' + Math.round(r.width) + '×' + Math.round(r.height));
   }
@@ -279,9 +290,17 @@ async function measureCinema(css, c){
   await new Promise(res => { f.onload = res; f.srcdoc = mkDoc(css); });
   const d = f.contentDocument, w = f.contentWindow;
   const cs = sel => { const e = d.querySelector(sel); return e ? w.getComputedStyle(e) : null; };
+  const rc = sel => { const e = d.querySelector(sel); if (!e) return null;
+                      const r = e.getBoundingClientRect();
+                      return { l:Math.round(r.left), t:Math.round(r.top),
+                               r:Math.round(r.right), b:Math.round(r.bottom),
+                               w:Math.round(r.width), h:Math.round(r.height) }; };
   const hgt = () => { const e = d.querySelector('.stage'); return e ? Math.round(e.getBoundingClientRect().height) : -1; };
   const root = d.documentElement;
-  const out = { panelBefore: cs('.panel') ? cs('.panel').display : '(没有面板)', stageBefore: hgt(), vh: c.h };
+  const out = { panelBefore: cs('.panel') ? cs('.panel').display : '(没有面板)',
+                stageBefore: hgt(), vh: c.h, vw: c.w,
+                barBefore: cs('.cinebar') ? cs('.cinebar').display : '(没有浮条)',
+                boxBefore: cs('.sidebox') ? cs('.sidebox').display : '(没有侧边框)' };
   root.classList.add('cin');
   out.panel   = cs('.panel')  ? cs('.panel').display  : '(没有面板)';
   out.err     = cs('#err')    ? cs('#err').display    : '(没有 err)';
@@ -290,8 +309,23 @@ async function measureCinema(css, c){
   out.capOp   = cs('.cap')    ? +cs('.cap').opacity   : -1;
   out.bodyPad = cs('body')    ? cs('body').paddingTop : '?';
   out.stageCin = hgt();
+  out.barD    = cs('.cinebar') ? cs('.cinebar').display : '(没有浮条)';
+  out.barOp   = cs('.cinebar') ? +cs('.cinebar').opacity : -1;
+  out.boxD    = cs('.sidebox') ? cs('.sidebox').display : '(没有侧边框)';
+  out.boxRect = rc('.sidebox');
   root.classList.add('over');
   out.hudOpOver = cs('.hud') ? +cs('.hud').opacity : -1;
+  /* 浮条「淡回来」这件事有两个面：看得见（opacity）和摸得着（pointer-events）。
+     少了后一个，浮条就是一条压在画面上、但把底下拖镜头手势全吃掉的透明带 ——
+     而画面上根本看不出它在那儿。 */
+  out.barOpOver = cs('.cinebar') ? +cs('.cinebar').opacity : -1;
+  out.barPeOver = cs('.cinebar') ? cs('.cinebar').pointerEvents : '?';
+  out.barRect   = rc('.cinebar');
+  out.capRect   = rc('.cap');
+  root.classList.add('bare');
+  out.barD_bare = cs('.cinebar') ? cs('.cinebar').display : '(没有浮条)';
+  out.boxD_bare = cs('.sidebox') ? cs('.sidebox').display : '(没有侧边框)';
+  root.classList.remove('bare');
   root.classList.remove('cin', 'over');
   out.panelAfter = cs('.panel') ? cs('.panel').display : '(没有面板)';
   out.stageAfter = hgt();
@@ -318,6 +352,44 @@ for (const c of CASES){
   /* 台词是**内容**不是界面：藏掉它，画面里就只剩一只鸟在骑，
      这个角色全部的性格都没了。所以这一条是钉住「别顺手一起藏了」。 */
   ok(m.capOp > 0.9, tag + '：台词仍然留着（内容不是界面，别一起藏掉）', '.cap opacity=' + m.capOp);
+
+  /* ── 极简控制条 + 侧边小框：量真实矩形，不靠看图 ──
+     看得见的东西一旦只靠人眼看，下次改布局就没人知道它有没有坏。 */
+  ok(m.barBefore === 'none' && m.boxBefore === 'contents',
+     tag + '：进电影模式之前浮条不存在、侧边框壳是 display:contents（不进盒树，不动老布局）',
+     'bar=' + m.barBefore + ' sidebox=' + m.boxBefore);
+  ok(m.barD === 'flex', tag + '：电影模式里浮条真的出现了', '.cinebar display=' + m.barD);
+  ok(m.barOp === 0, tag + '：浮条默认**藏着的**（不动鼠标就不该有东西压在画面上）',
+     '.cinebar opacity=' + m.barOp);
+  ok(m.barOpOver === 1 && m.barPeOver === 'auto',
+     tag + '：动一下（.over）浮条淡回来，而且这时才接管鼠标事件',
+     'opacity=' + m.barOpOver + ' pointer-events=' + m.barPeOver);
+  ok(m.barD_bare === 'none' && m.boxD_bare === 'none',
+     tag + '：纯画面（.bare）→ 浮条和侧边框都藏起来，只剩画面和台词',
+     'bar=' + m.barD_bare + ' sidebox=' + m.boxD_bare);
+
+  const b = m.barRect, x = m.boxRect, cp = m.capRect, vw = m.vw, vh = m.vh;
+  ok(b && x && b.w > 0 && b.h > 0 && x.w > 0 && x.h > 0,
+     tag + '：两个盒子都量得到**非空**的真实矩形',
+     'bar=' + JSON.stringify(b) + ' sidebox=' + JSON.stringify(x));
+  if (b && x && b.w > 0 && x.w > 0){
+    const inView = o => o.l >= -1 && o.t >= -1 && o.r <= vw + 1 && o.b <= vh + 1;
+    ok(inView(b) && inView(x), tag + '：两个盒子整个都在视口里（不能有一半在屏幕外）',
+       '视口 ' + vw + '×' + vh + ' / bar ' + JSON.stringify(b) + ' / sidebox ' + JSON.stringify(x));
+    ok(b.r > vw * 0.5 && b.b > vh * 0.5,
+       tag + '：浮条在**右下角**（不压住画面中心那只鸟）',
+       'bar 右 ' + b.r + '/' + vw + '，下 ' + b.b + '/' + vh);
+    /* 侧边框不能盖住正中间：0.35 而不是 0.5，因为竖屏那条窄屏规则
+       会把它压到 52vw 宽，盒子左沿本来就在中线左边一点点。 */
+    ok(x.l > vw * 0.35 && x.r <= vw + 1,
+       tag + '：侧边框贴着**右边**，且不吃掉画面正中',
+       'sidebox 左 ' + x.l + '，视口宽 ' + vw + '（要求 >' + Math.round(vw * 0.35) + '）');
+    const hit = (p, q) => p.l < q.r && q.l < p.r && p.t < q.b && q.t < p.b;
+    ok(!hit(b, x), tag + '：浮条和侧边框**不重叠**（两个都看不见是它们的活）',
+       JSON.stringify(b) + ' vs ' + JSON.stringify(x));
+    ok(cp && !hit(b, cp), tag + '：浮条**不压住台词**（台词是内容，压住了就等于藏掉）',
+       'cap=' + JSON.stringify(cp) + ' bar=' + JSON.stringify(b));
+  }
 }
 
 stage('反查');
@@ -391,6 +463,13 @@ ok(cssNoMedia !== cssText && cssNoMedia.length < cssText.length,
   ok(dur !== '' && dur !== '0s' && dur !== '0s, 0s',
      '反查 ⑩：HUD 确实有过渡（非 0s）→ 不关掉它，opacity 读到的是动画值而不是目标值',
      '.hud transition-duration=' + dur);
+  /* 反查 ⑪⑫：把 .cin 全改名之后，浮条和侧边框那几条必须**跟着失效**。
+     它们是新加的断言，最典型的恒过形态就是「元素一直在那儿，
+     只不过永远量不到该有的状态」—— 不拆一次就不知道它们在不在量东西。 */
+  ok(m.barD === 'none', '反查 ⑪：没有电影模式 CSS → 浮条不会出现（量它的那几条量的就是它）',
+     '.cinebar display=' + m.barD);
+  ok(m.boxD === 'contents', '反查 ⑫：没有电影模式 CSS → 侧边框不会变成盒子（量它的那几条量的就是它）',
+     '.sidebox display=' + m.boxD);
 }
 
 /* ── 输出 ── */
