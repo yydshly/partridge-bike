@@ -36,17 +36,30 @@ if ($a -lt 0 -or $b -lt 0) { throw "segAt block not found" }
 $seg = ($lines[$a..$b] -join "`n")
 "segAt  : lines $($a+1)..$($b+1)"
 
-# ---- 3. applyRoute ----
-$a = Find '^function applyRoute\(i\)\{'
-if ($a -lt 0) { throw "applyRoute not found" }
-$b = BlockEnd $a
+# ---- 3. SEG_BLEND + ownW + applyBands + applyRoute ----
+# ⚠️ 这四样必须**一起**切走：applyRoute 现在只调 applyBands，
+#    而 applyBands 要 ownW。只切 applyRoute 的话，harness 里会直接
+#    ReferenceError —— 「切出来了」不等于「切出来的东西能跑」。
+#    所以从 SEG_BLEND 起切到 applyRoute 的块尾，中间一整段都带上。
+$a = Find '^const SEG_BLEND'
+if ($a -lt 0) { throw "SEG_BLEND not found（段专属带的渐变宽度；没有它就退回硬切换了）" }
+$b = Find '^function applyRoute\(i\)\{' $a
+if ($b -lt 0) { throw "applyRoute not found" }
+$b = BlockEnd $b
 $apply = ($lines[$a..$b] -join "`n")
 "apply  : lines $($a+1)..$($b+1)"
 
-# ---- 4. frame() 里的路段切换块 ----
+# ---- 4. frame() 里的「换段块 + 其后的 applyBands」----
+# ⚠️ 顺序是**判据的一部分**，不是排版问题：applyBands 排在换段块之后，
+#    跨段那一帧的渐变才不会被 applyRoute 内部的「按段中央」覆盖掉。
+#    所以这里从换段块起、连**后面那行** applyBands(S.km) 一起切 ——
+#    只切到换段块收尾的话，harness 里没有这行，过渡就成了没被测过的代码。
 $a = Find 'const seg = segAt\(S\.km\);'
 if ($a -lt 0) { throw "frame seg block not found" }
 $b = BlockEnd ($a + 1)          # 从 if (seg !== S.seg){ 那一行开始走
+$c = Find '^\s*applyBands\(S\.km\);' $b
+if ($c -lt 0) { throw "frame applyBands call not found in the frame loop（过渡就靠它，删了判据必须红）" }
+$b = $c
 $tick = (Dedent $lines[$a..$b]) -join "`n"
 "frame  : lines $($a+1)..$($b+1)"
 

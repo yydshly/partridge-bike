@@ -63,8 +63,14 @@ const dom = () => ({
 });
 
 const D0 = snap(), U0 = dom();
+/* 深链那两个字段**必须在任何测试动过 S 之前**记下来。
+   探针第 2 节会把 S.km 改成 3.2 再点「重置」，所以后面再读就只剩
+   「重置之后」的值了 —— 拿它判「深链生效没有」是测不到东西的。 */
+const KMINIT = { q: new URLSearchParams(location.search).get('km'),
+                 km: S.km, s0: (typeof S0 !== 'undefined' ? S0.km : '(没有 S0)') };
 R.push(['I', '—— 初始状态快照 ——', JSON.stringify(D0)]);
 R.push(['I', '—— 初始 DOM ——', JSON.stringify(U0)]);
+R.push(['I', '—— 深链初始值（未被动过）——', JSON.stringify(KMINIT)]);
 
 /* ── 1. 每个「亮着」的按钮，它代表的状态是不是真的那样 ── */
 uok(U0.play === (D0.S.running ? '⏸' : '▶'), '播放键字形 = 正在跑？', U0.play + ' / running=' + D0.S.running);
@@ -164,9 +170,14 @@ S.saidTired = true; S.capT = 2; S.cruise = true; el('bCruise').classList.add('on
 S.hitT = 0.5; S.offRoad = 1; S.sweat = 0.7; S.blink = 0.12; S.blinkT = 0.4;
 el('bReset').click();
 const D1 = snap(), U1 = dom();
-uok(D1.S.km === 0 && D1.S.seg === -1 && D1.S.tSec === 0 && D1.S.lat === 0 && D1.S.yaw === 0
-   && D1.S.steer === 0, '重置：里程/路段/计时/横向/朝向/车把 全归零',
-   'km=' + D1.S.km + ' seg=' + D1.S.seg + ' tSec=' + D1.S.tSec + ' lat=' + D1.S.lat
+/* ⚠️ 这里原来写的是 `D1.S.km === 0`。带 ?km=2.0 加载时它红了 ——
+   因为「重置」应该回到的是**初始里程**，而初始里程就是深链指定的那个 2。
+   钉死字面量 0 的判据在有深链之后就是错的，而且它错得很有欺骗性：
+   不带参数加载时它照样全绿，看起来一直是对的。
+   真正该问的是「重置 == 快照」，所以拿 S0.km 比。 */
+uok(D1.S.km === KMINIT.s0 && D1.S.seg === -1 && D1.S.tSec === 0 && D1.S.lat === 0 && D1.S.yaw === 0
+   && D1.S.steer === 0, '重置：里程回到**初始值**（带 ?km= 时就是那个起点，不是 0）/路段/计时/横向/朝向/车把',
+   'km=' + D1.S.km + '（S0.km=' + KMINIT.s0 + '）seg=' + D1.S.seg + ' tSec=' + D1.S.tSec + ' lat=' + D1.S.lat
    + ' yaw=' + D1.S.yaw + ' steer=' + D1.S.steer);
 uok(D1.S.fatigue === 0 && D1.S.startle === 0 && D1.S.wet === 0 && D1.S.lookT === 0
    && D1.S.lookAmt === 0 && D1.S.saidTired === false && D1.S.sweat === 0,
@@ -431,6 +442,107 @@ uok(afterDrag.lit.length === 0,
   uok(!(CAM.az === r0), '反查 ⑦：旧的无条件平滑 → 「一个比特都没动」翻 false',
      'az ' + r0.toFixed(6) + ' → ' + CAM.az.toFixed(6));
   S.running = true;
+}
+
+/* ── 4. 段专属物件：四个新构造函数当初是**算过**才敢那么摆的，
+      那些数当时只活在注释里，改代码的人看不见、也没有任何东西拦着他。
+      这里把它们钉成判据。
+   ⚠️ 下面的阈值都取自实测（不是拍脑袋），而且**每条都把量出来的数带在
+      detail 里** —— 判据红的时候不用回头猜是哪一步跑偏了。 */
+{
+  const bx = new THREE.Box3();
+  const bandOf = id => BANDS.find(B => B.id === id);
+  const OWNBANDS = ['tunnel','fence','reed','rail','boulder','house'];
+
+  /* ① 隧道树必须是**成拱**的：每一棵的树冠都要越过路中心，
+        否则就不是隧道，是两排各站各的树。
+        这条钉的是「冠半径 > 树到路中心的距离」这个当初算出来的关系。
+        实测最小冠半径 5.38 m，最近的一棵离路中心 4.31 m —— 有余量。 */
+  {
+    const B = bandOf('tunnel');
+    let cross = 0, minR = 1e9, maxD = 0;
+    for (const o of B.objs){
+      bx.setFromObject(o);
+      if (bx.min.z < -LANE) cross++;
+      minR = Math.min(minR, (bx.max.z - bx.min.z)/2);
+      maxD = Math.max(maxD, Math.abs(o.position.z - (-LANE)));
+    }
+    uok(B.objs.length > 0 && cross === B.objs.length,
+       '隧道树成拱：' + cross + '/' + B.objs.length + ' 棵的树冠越过了路中心线',
+       '最小冠 z 向半径 ' + minR.toFixed(2) + ' m；最远那棵离路中心 ' + maxD.toFixed(2) + ' m');
+    /* ⚠️ 这里**故意不再**加一条「最小冠半径 > 最远离路距离」。
+       我第一版加了，红在 5.38 > 5.56 —— 但那条量错了东西：
+       bbox 的 z 向直径只是「冠最大半径」的下界，而树是随机转过角度的，
+       往路那边伸出去多远和 z 向直径不是一回事。
+       真正该问的是「这棵的冠有没有越过路中心」，那就是上面那条。
+       判据必须问画面呈现出什么，不能拿一个相关的量代替它。 */
+  }
+
+  /* ② 段专属物件**不许压在路面上**。
+        路面是 z ∈ [T_MIN, T_MAX]、中心 -LANE、半宽 ROAD_W/2。
+        谁把某条带的 z 调小到半宽以内，骑过去就是一头撞进房子/树里 ——
+        而带子权重、语法、九套 harness 全绿。这条就是拦那个的。 */
+  {
+    const worst = [];
+    for (const id of OWNBANDS){
+      const B = bandOf(id);
+      let dmin = 1e9;
+      for (const o of B.objs) dmin = Math.min(dmin, Math.abs(o.position.z - (-LANE)));
+      worst.push(id + ':' + dmin.toFixed(2));
+      uok(B.objs.length > 0 && dmin > ROAD_W/2,
+         '「' + id + '」的物件都站在路面之外（最近 ' + dmin.toFixed(2) + ' m > 半宽 ' + (ROAD_W/2).toFixed(2) + ' m）',
+         id + ' 最近着地点离路中心 ' + dmin.toFixed(2) + ' m');
+    }
+    R.push(['I', '—— 六条段专属带的离路距离 ——', worst.join('  ')]);
+  }
+
+  /* ③ 护栏的横杆长度必须等于**组间距**，两段才接得上、看不出缝。
+        gap 是从 span/n 算出来的，所以判据也从 span/n 算 ——
+        写死 5.333 的话，哪天把 n 从 18 改成 24，这条就成了纯噪音。 */
+  {
+    const B = bandOf('rail');
+    const want = B.span / B.n;
+    let lo = 1e9, hi = -1e9;
+    for (const o of B.objs){ bx.setFromObject(o); const w = bx.max.x - bx.min.x;
+                             lo = Math.min(lo, w); hi = Math.max(hi, w); }
+    uok(Math.abs(lo - want) < 0.02 && Math.abs(hi - want) < 0.02,
+       '护栏横杆长度 = 组间距（span/n = ' + want.toFixed(3) + ' m，两段接得上）',
+       '18 组的 X 跨度：' + lo.toFixed(3) + ' ~ ' + hi.toFixed(3) + ' m');
+  }
+
+  /* ④ 六条带的物件都要**落在地面上**（position.y = 0）。
+        房子浮在半空、石头埋进土里，都是「画面里一眼可见但没有任何检查会红」的那类。 */
+  {
+    const badY = [];
+    for (const id of OWNBANDS){
+      const B = bandOf(id);
+      for (const o of B.objs) if (Math.abs(o.position.y) > 1e-6) badY.push(id + '@' + o.position.y.toFixed(2));
+    }
+    uok(badY.length === 0, '六条段专属带的物件都落在地面上（position.y = 0）',
+       badY.length ? ('浮空/入土 ' + badY.length + ' 处：' + badY.slice(0,5).join(' ')) : '44+26+44+22+18+18 件全在 y=0');
+  }
+
+  /* ⑤ ?km= 深链。**分两种加载**：带参数时必须真的落在那一公里，
+        而且 S0 快照里也得是那个值（深链写在 S0 之后，所以「重置」才回得来）。
+        不带参数时必须是 0。
+        ⚠️ 判据是**条件式**的，所以只加载不带参数的那一次时，
+           「深链生效」那一半等于没测 —— 页面清扫时必须额外跑一次
+           _uistate.html?km=2.0，两次的标题都要 PASS 才算数。 */
+  {
+    const q = KMINIT.q;
+    if (q === null){
+      uok(KMINIT.km === 0 && KMINIT.s0 === 0, '不带 ?km= 时从 0 起步（这一半不测深链，深链要另跑带参的那次）',
+         'S.km=' + KMINIT.km + ' S0.km=' + KMINIT.s0);
+    } else {
+      const want = parseFloat(q);
+      uok(KMINIT.km === want, '?km=' + q + ' → 开局就落在 ' + want + ' km（探针动 S 之前量的）',
+         'S.km=' + KMINIT.km);
+      uok(KMINIT.s0 === want, '深链写在 S0 快照**之后**，所以「重置」也回到 ' + want + ' km（不是跳回 0）',
+         'S0.km=' + KMINIT.s0);
+      uok(segAt(KMINIT.km) >= 0 && segAt(KMINIT.km) < ROUTE.length,
+         '深链落点能解析出合法段（' + routeName(KMINIT.km) + '）', 'segAt(' + KMINIT.km + ')=' + segAt(KMINIT.km));
+    }
+  }
 }
 
 /* ── 输出 ── */

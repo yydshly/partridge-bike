@@ -3688,29 +3688,66 @@ function segAt(km){
 }
 function routeName(km){ return ROUTE[segAt(km)].name; }
 
-/* 换段：调景的疏密 + 重掷身前的景片 + 刷新碑面。 */
+/* 段专属带（own）的**连续**权重。
+   这些东西以前是硬开关：applyRoute 一被调用，44 根篱笆在同一帧从可见变成
+   不可见、26 丛芦苇从不可见变成可见。物件差异做得越干净，这个「唰」一下
+   越扎眼 —— 远看就像路边立了一堵看不见的墙，然后墙又没了。
+   所以改成按「离段界还有多远」连续变化：进场 0→1，出场 1→0，
+   骑过去是「走进一片芦苇」，不是「芦苇出现了」。
+
+   d 的算法要说清楚，不然下一个改这里的人会踩同一个坑：
+   ROUTE 是**绕圈**的（跑完 5 km 回到第 0 段，km 继续往上加），所以
+   (km - seg.at) 必须先归一化到 ±ROUTE_LEN/2，取**最近的那一次**。
+   不归一化的话，骑到第 6 公里时 d 会是 5000，权重恒等于 0，
+   表现为「绕一圈之后所有段专属物件再也不出现了」。 */
+const SEG_BLEND = 0.15;                        // km：进出各 150 m 渐变
+function ownW(own, km){
+  let seg = null;
+  for (const s of ROUTE) if (s[own]){ seg = s; break; }
+  if (!seg) return 0;                          // 没有任何一段开它 → 永远不出现
+  let d = (km - seg.at) % ROUTE_LEN;
+  if (d < 0) d += ROUTE_LEN;
+  if (d > ROUTE_LEN/2) d -= ROUTE_LEN;
+  if (d < 0)      return clamp(1 + d/SEG_BLEND, 0, 1);             // 段前：-0.15→0，0→1
+  if (d > seg.km) return clamp(1 - (d - seg.km)/SEG_BLEND, 0, 1);  // 段后：末→1，+0.15→0
+  return 1;
+}
+
+/* 带子权重 —— **每帧**跟着 km 走，段专属带才有那圈渐变。
+   权重解析，优先级从高到低：
+     ① B.own —— **段专属**的带：只有该段开了同名开关才出现，权重是连续的。
+        own:'tunnel' 就看 s.tunnel（经 ownW 变成 0~1），own:'fence' 同理。
+        它不能靠 tag 顺带被打开 —— tag 可能和别的带重名（tree 就有五条），
+        不显式关掉的话，另外几段都会莫名其妙长出同一排东西。
+     ② s.w[B.id] —— 按**带**调。id 优先于 tag 之后，「林荫」才能把
+        44 棵隧道树拉满的同时，单独把同 tag 的近树带压掉；
+        只按 tag 调的话，五条 tag:'tree' 会一起变，想压谁都压不住。
+     ③ s.w[B.tag] —— 老行为，一段里所有同 tag 的带一起调。
+     ④ 都没有就是 1。
+   ⚠️ ②里 B.id 可能是 undefined（_routeharness 有一条没有 id 的替身带子），
+      s.w[undefined] 求值成 undefined，于是自然落到 ③ —— 旧 harness 不受影响。 */
+function applyBands(km){
+  const s = ROUTE[segAt(km)];
+  for (const B of BANDS){
+    let w;
+    if (B.own)                              w = ownW(B.own, km);
+    else if (s.w && s.w[B.id] !== undefined) w = s.w[B.id];
+    else                                    w = (s.w && s.w[B.tag] !== undefined) ? s.w[B.tag] : 1;
+    const n = B.objs.length;
+    /* ceil 不是 floor：原来的 (k/n) < w 在 n*w 落在两个整数中间时
+       （n=10、w=0.55）会留 6 个，floor 给 5 个 —— 那是把既有行为悄悄改掉，
+       而权重表里这种小数多的是。ceil 才和 (k/n)<w 逐项等价。 */
+    const lim = Math.min(n, Math.ceil(clamp(w, 0, 1) * n));
+    for (let k = 0; k < n; k++) B.objs[k].visible = k < lim;
+  }
+}
+
+/* 换段：重掷身前的景片 + 刷新碑面。
+   带子权重不再在这里算 —— 它归 applyBands，那东西每帧都跑。
+   这里仍按**段中央**调一次，免得刚进段的那一帧权重还停在上一段上。 */
 function applyRoute(i){
   const s = ROUTE[i];
-  for (const B of BANDS){
-    /* 权重解析，优先级从高到低：
-         ① B.own —— **段专属**的带：只有该段开了同名开关才出现。
-            own:'tunnel' 就看 s.tunnel，own:'water' 就看 s.water。
-            它不能靠 tag 顺带被打开 —— tag 可能和别的带重名（tree 就有五条），
-            不显式关掉的话，另外几段都会莫名其妙长出同一排东西。
-         ② s.w[B.id] —— 按**带**调。id 优先于 tag 之后，「林荫」才能把
-            44 棵隧道树拉满的同时，单独把同 tag 的近树带压掉；
-            只按 tag 调的话，五条 tag:'tree' 会一起变，想压谁都压不住。
-         ③ s.w[B.tag] —— 老行为，一段里所有同 tag 的带一起调。
-         ④ 都没有就是 1。
-       ⚠️ ②里 B.id 可能是 undefined（_routeharness 用的是没有 id 的替身 BANDS），
-          s.w[undefined] 求值成 undefined，于是自然落到 ③ —— 旧 harness 不受影响。 */
-    let w;
-    if (B.own)                    w = s[B.own] ? 1 : 0;
-    else if (s.w && s.w[B.id] !== undefined) w = s.w[B.id];
-    else                          w = (s.w && s.w[B.tag] !== undefined) ? s.w[B.tag] : 1;
-    const n = B.objs.length;
-    for (let k = 0; k < n; k++) B.objs[k].visible = (k/n) < w;
-  }
+  applyBands(s.at + s.km*0.5);
   VIG_MAKERS = s.vig;
   let c = 0;
   for (const slot of VIG_SLOTS){
@@ -3771,22 +3808,29 @@ const S = {
   saidTired:false   // 累到某个程度时说过一句没有（只说一次）
 };
 
-/* 初值只有这一处。**初始状态**和「重置之后」必须由同一个来源产出，
-   否则两者迟早对不上 —— 面板上有一盏灯跟状态对不上时，
-   根因往往是「初值写了两遍」。重置直接拿 S0 填回去。
-   ⚠️ S 是 const（frame() 每帧闭包引用它），所以只能逐字段写回。 */
-const S0 = {};
-for (const k in S) S0[k] = S[k];
-
 /* 深链：?km=1.8 直接从那一公里开始。
    要看某一段长什么样，不用先骑两公里过去 —— 打开就是那一段。
-   放在 S0 快照**之后**：于是「重置」也回到这个起点，而不是莫名其妙跳回 0。
+   ⚠️ 必须放在 S0 快照**之前**，不是之后。
+      原来它写在 S0 后面，注释还写着「于是『重置』也回到这个起点」——
+      那句推理是**反的**：写在之后的话 S.km=1.8 而 S0.km=0，
+      resetRide() 拿 S0 填回去，里程就跳回 0 了，正是注释想避免的那个。
+      深链的整个用法就是「打开就是那一段」，一按重置就丢，等于没有。
+      （_uistate.html?km=2.0 实测 S.km=2 / S0.km=0 抓到的。）
    seg 保持 -1，主循环第一帧就会按 S.km 切段、播进段台词（5043 那段逻辑）。 */
 try{
   const q0 = new URLSearchParams(location.search).get('km');
   const km0 = parseFloat(q0);
   if (Number.isFinite(km0) && q0 !== null) S.km = km0;   // parseFloat(null) 是 NaN，但显式挡一层更清楚
 }catch(_){ /* file:// 下个别环境没有 URLSearchParams，忽略即可 */ }
+
+/* 初值只有这一处。**初始状态**和「重置之后」必须由同一个来源产出，
+   否则两者迟早对不上 —— 面板上有一盏灯跟状态对不上时，
+   根因往往是「初值写了两遍」。重置直接拿 S0 填回去。
+   ⚠️ S 是 const（frame() 每帧闭包引用它），所以只能逐字段写回。
+   ⚠️ 快照点在深链**之后**：所以 S0.km 记的是「?km= 指定的起点」，
+      按重置回到的是那个起点而不是 0。 */
+const S0 = {};
+for (const k in S) S0[k] = S[k];
 
 /* 重置 = 回到初始状态，**并且面板上的每一盏灯都跟上**。
    第一版只清了 9 个字段，于是骑了 3 km 之后按重置：鸟还是累的、
@@ -5190,6 +5234,14 @@ function frame(){
         BGM.manual = false;
       }
     }
+    /* 带子权重每帧跟着 km 走 —— 段专属带的渐变全靠它。
+       ⚠️ **必须排在换段块之后**，不能放前面：
+          applyRoute 内部也调了一次 applyBands（按段中央），那是给
+          「直接跳到某一段」用的。放前面的话，跨段那一帧会被段中央
+          的满权重覆盖掉，渐变在最该发生的那一帧被抹平 ——
+          于是「唰一下全换」只是从 applyRoute 挪到了换段块里，没修掉。
+       代价很小：全 BANDS 加起来三百来个 visible 开关，一帧不到 0.05 ms。 */
+    applyBands(S.km);
     const wheelRev = v / (2*Math.PI*R_WHEEL);
     S.wheel += wheelRev * Math.PI*2 * dt;
     S.crank += wheelRev * Math.PI*2 * dt;

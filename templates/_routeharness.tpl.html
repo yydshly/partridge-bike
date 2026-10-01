@@ -21,7 +21,10 @@ const BANDS = [
      替身里**必须**也带 own，否则 applyRoute 的 B.own 分支在这个 harness 里
      永远走不到，机制坏了也不会红。「没被测过的代码等于没有」——
      尤其是一种刚加的、正好解决某个问题的机制。 */
-  { id:'fence', own:'fence', tag:'fence', objs: Array.from({length:44}, () => ({visible:true})) }
+  { id:'fence', own:'fence', tag:'fence', objs: Array.from({length:44}, () => ({visible:true})) },
+  /* 第二条 own 带（河堤的芦苇）：只留一条的话只能验「出场」，
+     验不了「进场」—— 而进场 0→1 恰恰是玩家最先撞到的那一面。 */
+  { id:'reed',  own:'reed',  tag:'reed',  objs: Array.from({length:26}, () => ({visible:true})) }
 ];
 /* 景片槽位：position.x 决定它在身前还是身后，set() 记录被换成了什么 */
 let VIG_SLOTS = [], VIG_MAKERS = null, KM_STONES = [];
@@ -140,6 +143,86 @@ ok(visibleOf('fence') === 0,
 ok(VIG_MAKERS === ROUTE[1].vig, '景片池换成了河堤那几种');
 reset(); applyRoute(2);                       // 林荫 w.tree=1.0
 ok(visibleOf('tree') === countOf('tree'), '林荫 w.tree=1.0 → 树一棵不少');
+
+/* ══════════ 段专属带的渐变 ══════════
+   段专属的东西原来是**硬开关**：applyRoute 一被调用，44 根篱笆在同一帧
+   从可见变成不可见、26 丛芦苇从不可见变成可见。远看就是路边立了一堵
+   看不见的墙，然后墙又没了。物件差异做得越干净，这个「唰」越扎眼。 */
+L.push('');
+L.push('段专属带的渐变（原来是一帧之内整批换掉）：');
+
+/* 段界从 ROUTE 里现算，不钉死 0.9 —— 钉死的话以后改任何一段的长度，
+   这几条就变成纯噪音，而噪音判据比没判据更坏：它会让人以为测过了。
+   km2 而不是 round1：替身里的 round1 是取整的（round1(0.075)=0），
+   拿来写「离段界多远」会印成「0 km」，看着像这条判据测了个寂寞。 */
+const km2 = x => x.toFixed(2);
+const ownSeg   = ROUTE.find(s => s.fence);
+const reedSeg  = ROUTE.find(s => s.reed);
+const ownEnd   = ownSeg.at + ownSeg.km;              // 村口的段界
+const reedBeg  = reedSeg.at;                        // 河堤的段界
+ok(!!ownSeg && !!reedSeg, '替身用的两条 own 带在真 ROUTE 里各有一段开着');
+ok(ownEnd > 0 && reedBeg > 0, '段界现算得出来：村口止于 ' + km2(ownEnd) + ' km，河堤起于 ' + km2(reedBeg) + ' km');
+
+reset(); applyBands(ownSeg.at + ownSeg.km*0.5);
+ok(visibleOf('fence') === countOf('fence'), '段中央：篱笆全开（' + visibleOf('fence') + '/' + countOf('fence') + '）');
+
+/* **这两条是「到底有没有渐变」的分水岭。**
+   ⚠️ 渐变只在**段外**：段内恒为 1，出了段界才在 SEG_BLEND 内降到 0。
+      我第一版把采样点放在「界前 75 m」—— 那是村口段内，本就该是满的 44 根，
+      于是三条一起红。判据写的是我以为的模型，不是实现的模型，
+      而红得莫名其妙的时候，先怀疑判据，别急着改实现。
+
+   正确采样点：出场取「界**后** 75 m」，进场取「界**前** 75 m」
+   （那时还站在村口，但已经在芦苇的渐入区里）。 */
+reset(); applyBands(ownEnd + SEG_BLEND*0.5);
+const midOut = visibleOf('fence');
+ok(midOut > 0 && midOut < countOf('fence'),
+   '出场：过了段界 ' + km2(SEG_BLEND*0.5) + ' km，篱笆 ' + midOut + '/' + countOf('fence') +
+   ' 根（既不是 0 也不是满数 = 真的在渐变）');
+
+reset(); applyBands(reedBeg - SEG_BLEND*0.5);
+const midIn = visibleOf('reed');
+ok(midIn > 0 && midIn < countOf('reed'),
+   '进场：离段界还有 ' + km2(SEG_BLEND*0.5) + ' km（人还在村口），芦苇已经 ' +
+   midIn + '/' + countOf('reed') + ' 丛 = 是渐变进来的');
+
+/* 单调性：过了段界只会越来越少。中间任何一步反弹回多，就是取整或归一化写错了。 */
+let prev = Infinity, mono = true, trace = [];
+for (let d = 0; d <= SEG_BLEND*1.2 + 1e-9; d += SEG_BLEND*0.2){
+  reset(); applyBands(ownEnd + d);
+  const v = visibleOf('fence');
+  trace.push(km2(ownEnd + d) + 'km:' + v);
+  if (v > prev) mono = false;
+  prev = v;
+}
+ok(mono, '出场是单调的，一根都不会多回来：' + trace.join(' '));
+ok(prev === 0, '段界外 ' + km2(SEG_BLEND*1.2) + ' km 处篱笆归零（还剩 ' + prev + ' 根）');
+
+/* ROUTE 是**绕圈**的（跑完一圈回到第 0 段，km 继续往上加）。
+   ownW 里不把 (km - at) 归一化的话，骑到第 6 公里时 d 会是几千，
+   权重恒等于 0 —— 表现是「绕一圈之后段专属物件再也不出现」。
+   这条专门钉那个归一化。 */
+reset(); applyBands(ownSeg.at + ownSeg.km*0.5 + ROUTE_LEN);
+ok(visibleOf('fence') === countOf('fence'),
+   '绕一圈之后篱笆照样全开（km+' + km2(ROUTE_LEN) + '，ownW 的归一化没漏）');
+reset(); applyBands(ownSeg.at + ownSeg.km*0.5 - ROUTE_LEN);
+ok(visibleOf('fence') === countOf('fence'), '负 km 那侧同样归一化（km-' + km2(ROUTE_LEN) + '）');
+
+/* **每帧调用这条是整套渐变的开关，而且顺序是判据的一部分。**
+   applyBands 排在换段块**之后**：排在前面的话，跨段那一帧会被
+   applyRoute 内部的「按段中央满权重」覆盖掉，渐变在最该发生的一帧
+   被抹平 —— 「唰一下全换」只是从 applyRoute 挪进了换段块，没修掉。
+   这里把 S.seg 设成当前段，让换段分支**不触发**，于是测到的
+   「tick 一次之后权重跟着 km 变了」只可能来自那行 applyBands。
+   把源里那行删掉、或挪到换段块前面，这两条都会红。 */
+reset();
+S.km = ownEnd + SEG_BLEND*0.5; S.seg = segAt(S.km);   // 站在河堤，不触发换段
+tick();
+const afterTick = visibleOf('fence');
+ok(afterTick > 0 && afterTick < countOf('fence'),
+   'routeTick 每帧把权重带着 km 走：tick() 一次后篱笆 ' + afterTick + '/' + countOf('fence') + ' 根');
+ok(afterTick === midOut, 'tick() 调出来的权重和直接 applyBands(km) 一致（' +
+   afterTick + ' = ' + midOut + '）—— 说明帧内那行没有另算一套');
 
 L.push('');
 L.push('只重掷身前的景（身后的保留上一段）：');
