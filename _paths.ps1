@@ -135,6 +135,13 @@ $OUT_MOODSTATE = "$DIR_OUT\_moodstate.html"
 $OUT_UISTATE   = "$DIR_OUT\_uistate.html"
 $OUT_TOUCH     = "$DIR_OUT\_touchharness.html"
 $OUT_DIAG      = "$DIR_OUT\_cruisediag.html"      # _mkdiag 专用
+# ⚠️ 音乐回归页原先**连变量都没有**：_mkharness.ps1 里直接写死
+#    `Join-Path $DIR_OUT '_bgmharness2.html'`。于是它不在 $OUT_NAMES 里，
+#    _pages.ps1 从来不清点它 —— 它的 28 条断言坏了也没人会知道，
+#    而它又没把真条数写进 document.title，所以「打开页面看标题 PASS n/m」
+#    这条收尾指令对它也是假的（drive/traffic/route 当初栽的就是这个）。
+#    漏掉它的根因就是这里：迁移工具认文件名，认不出来的名字就永远没人管。
+$OUT_BGM2      = "$DIR_OUT\_bgmharness2.html"    # _mkharness 专用
 # ⚠️ 三个**实拍探针**曾经共用一个 $OUT_DBG。三个脚本各自 exit 0、
 #    各自那行输出也完全正常，但**谁后跑谁把前一个的页覆盖掉** ——
 #    「取景页还在不在」这件事没有任何检查会问，所以它能一直烂着。
@@ -144,10 +151,13 @@ $OUT_PAUSE     = "$DIR_OUT\_pause.html"           # _mkpause 专用
 $OUT_REC       = "$DIR_OUT\_rec.html"             # _mkrec   专用
 
 # 页名（不含目录）—— _pages.ps1 清点、_pagestest.ps1 反查都用这个
+# ⚠️ 这份清单是**判据的输入边界**：清单外的页，一条断言都不会有人看。
+#    加页容易漏，所以清单里每多一项都是「又多一个会被检查的东西」，
+#    不是「又记了一个文件名」。
 $OUT_NAMES = @(
   '_driveharness.html','_trafficharness.html','_routeharness.html',
   '_moodharness.html','_cruiseharness.html','_moodstate.html','_uistate.html',
-  '_touchharness.html'
+  '_touchharness.html','_bgmharness2.html'
 )
 
 # 每页的断言记号：常规 harness 记 ok()，_uistate 和 _touchharness 记 uok()。

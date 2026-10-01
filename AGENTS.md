@@ -1872,3 +1872,101 @@ git 的进度行（`To https://…`）走的是 **stderr**。`2>&1` 把它并进
 > doccheck 漏了捕获组、我自己写坏一行 ParserError 误判成修好了。
 > 唯一管用的办法是**每次都去读那条检查自己的正常输出**（收尾行 / 计数行），
 > 而不是只看「有没有错误行」。
+---
+
+## 2026-10-01 电影模式（沉浸式骑行）+ 修掉一个产品真 bug + 补上第 9 页回归页
+
+### 交付
+
+- `F` 键 / 面板「⛶ 电影模式」：全屏 + 藏面板藏 HUD，动一下鼠标界面 2.6 秒淡回。
+- head 补 `viewport-fit=cover` + 一组「添加到主屏」meta；CSS 加 `--appvh`
+  （`100vh` → `@supports` 里换 `100dvh`）+ `env(safe-area-inset-*)` 内边距。
+- **台词和歌词故意留着**（内容不是界面），改法写在 CSS 注释里。
+- `_checkall` **20/20 全绿 exit 0**；九页实测
+  `58/58 · 34/34 · 39/39 · 450/450 · 85/85 · 41/41 · 56/56 · 78/78 · 63/63`。
+
+### 修掉的产品真 bug：`fullscreenchange` 绑在了 window 上
+
+`syncFs` 原来这么写：
+
+```js
+addEventListener('fullscreenchange', syncFs);   // 顶层裸写 = 绑到 window
+```
+
+**这个事件只在 `document` 上派发、而且不冒泡**（规范如此，MDN 和
+[php.cn 的整理](https://www.php.cn/faq/2587827.html)一致：绑 window / 元素都收不到）。
+所以 `syncFs` **一次都不会跑** —— 用户按 Esc 退全屏之后界面还藏着，
+正是那段注释自己写着要防的症状。
+
+> 泛化：**事件监听绑在哪个目标上，静态检查看不出来，而「事件没来」不会抛异常**，
+> 于是所有检查照样全绿。这里能抓住它的只有反查 ⑧。
+
+### 反查抓到的不是产品 bug，是**上一条断言恒过**
+
+反查 ⑧（装回 `wasFs=true` 后要求电影模式跟着退）第一次跑就红。
+顺着查下去发现：紧挨着它的那条「全屏请求被拒 → 电影模式留在原地」**一直是恒过的** ——
+反查用 `document.dispatchEvent(...)`，产品监听在 `window`，事件**根本送不到**。
+「什么都没发生」被当成了「守卫生效」。
+
+> 规则再次成立：**恒过的判据不会自己暴露，它只会被旁边的反查顶出来。**
+> 所以每加一条判据都要问：它前面那条是不是也在「什么都没发生」？
+
+### 补上第 9 页回归页 —— 洞一开就抓出一条烂掉的断言
+
+`dist\_bgmharness2.html`（音乐/歌词，63 条断言）原先**既不在 `_paths.ps1` 的
+`$OUT_NAMES` 里、也没把真条数写进 `document.title`**（只有写死的
+`<title>bgm harness v2</title>`）。后果有两层：
+
+1. `_pages.ps1` 从来不清点它 → 它的断言坏了没人知道；
+2. 收尾那句「浏览器打开 `dist\_*.html` 看标题 `PASS n/m`」**对它也是假指令**。
+
+补进去之后**第一次跑就红 62/63**，烂掉的那条是：
+
+```
+FAIL  初始曲名 = 「点一下画面开始」
+```
+
+它还在断言**修复前**的行为（初始曲名 = 第一首曲名 `去看晚霞`），
+而产品早就改成「用户没真的动播放器之前，曲名位显示『点一下画面开始』」
+（`paintBgm` 里 `!BGM.started` 分支，旁边有 ⚠️ 注释记录当初的 bug）。
+`_uistate` 里那条断言早就写明了新行为 —— **两个页面对同一件事的说法相反，
+而矛盾的那个页没人跑**。
+
+> 泛化：**「没人检查过的东西坏了也没人知道」的代价不是抽象风险，是一条已经
+> 烂掉、并且和产品真实行为相反的断言。** 补检查的价值常常在补上的那一刻就兑现。
+
+修法：模板加 `tot` 计数器 + `document.title`，`_paths.ps1` 补 `$OUT_BGM2` 并加进
+`$OUT_NAMES`，`gen\_mkharness.ps1` 改用变量（原先直接写死
+`Join-Path $DIR_OUT '_bgmharness2.html'`，这正是迁移工具认不出、因而没人管它的根因）。
+反查：把模板里那行标题去掉重新生成，`_pages.ps1` **exit 1 且点名 `_bgmharness2.html` + NOTITLE**。
+
+### 本轮踩的四个环境坑
+
+1. **`_paths.ps1` 点源之后 `$PSCommandPath` 是空的** —— `ReadAllText($PSCommandPath)`
+   报「空路径名是非法的」。点源进来没有「脚本自己的路径」这回事，要用 `$ROOT` 拼。
+2. **手打的路径字面量可能和磁盘上的名字差一个字符**。表现极具迷惑性：
+   `Get-ChildItem` 能列出 `dist` 里的文件、`[IO.File]::Exists(<枚举出来的 FullName>)`
+   是 `True`，而我手打的同一个绝对路径判 `False`；连纯内存的
+   `$_.Name -eq 'parridge-3d.html'` 都匹配不上。
+   → 临时命令里也别手打路径，`. .\_paths.ps1` 问它要。
+   （`checks\self\_doctest.ps1` 里那条「把 partridge-3d.html 拼成 partridge-3d.html」
+   的注释，渲染出来两个字面量一模一样 —— 说明这坑以前就踩过，只是当时没看懂。）
+3. **无头 Chrome 渲染不了这两个大页**。`--headless=new --dump-dom` 跑
+   `_touchharness.html`：11.7 MB 页面 + 持续 rAF + 软件 WebGL，150 秒被看门狗杀掉，
+   dump 出 **0 字节**。`--run-all-compositor-stages-before-draw` 和 rAF 死循环互锁，更糟。
+   → 大页只能靠真浏览器。
+4. **FilePanel 浏览器会被别的会话抢焦点**。`open_tab` 之后 `sleep 28` 再 `inspect`，
+   读到的是**线上站点**那个标签页（URL 一个 `yydshly.github.io` 一个 `file://`），
+   两个页面的结果差点互相印证。
+   → **别等**。harness 跑得飞快（`_uistate` 打开即完成），`open_tab` 的**返回值里
+   已经同时带着 url 和 title**，那一次调用里读完就够；`inspect` 紧接着调用来交叉印证。
+
+### 待办（已确认顺序）
+
+- 「事件监听目标」目前只有动态反查兜着，**CI 看不到**（浏览器页 CI 跑不了）。
+  可以提成一条静态判据：凡 `fullscreenchange` / `webkitfullscreenchange`
+  的监听，前面必须有 `document.`。
+- ① MP3 哈希基线（`src\_bgm-sha256.json` + 判据 + 反查）。
+- ③ 反查临时目录从仓库根移到 `dist\`（有回归风险，先记不做）。
+- 真机确认：电影模式观感、iOS 全屏、刘海屏 `dvh`、添加到主屏 —— 本机都验不了。
+- 线上那份仍是 `2e5cb95` 的窄屏版，本轮**未重新部署**。

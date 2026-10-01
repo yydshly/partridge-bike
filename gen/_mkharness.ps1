@@ -66,5 +66,5 @@ $expJs = '[' + ($exp -join ',') + ']'
 
 $tpl     = [IO.File]::ReadAllText(($TPL_BGM2))
 $harness = $tpl.Replace('/*__BGM__*/', $block).Replace('__EXPECT__', $expJs)
-[IO.File]::WriteAllText((Join-Path $DIR_OUT '_bgmharness2.html'), $harness, (New-Object Text.UTF8Encoding($false)))
-"harness bytes: {0:N0}" -f (Get-Item (Join-Path $DIR_OUT '_bgmharness2.html')).Length
+[IO.File]::WriteAllText($OUT_BGM2, $harness, (New-Object Text.UTF8Encoding($false)))
+"harness bytes: {0:N0}" -f (Get-Item $OUT_BGM2).Length

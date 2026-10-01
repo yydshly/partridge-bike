@@ -47,8 +47,8 @@ const AU = { ready:true, on:true, ctx:{ decodeAudioData: buf => Promise.resolve(
 
 /* ---- checks ---- */
 const L = [];
-let bad = 0;
-const ok = (cond, msg) => { L.push((cond?'  PASS  ':'  FAIL  ') + msg); if(!cond) bad++; };
+let bad = 0, tot = 0;
+const ok = (cond, msg) => { tot++; L.push((cond?'  PASS  ':'  FAIL  ') + msg); if(!cond) bad++; };
 
 bgmBuild();
 L.push('build: ' + made.length + ' 个 <audio>, ' + created.length + ' 个 Blob URL');
@@ -58,7 +58,15 @@ ok(made.length === 8, '建出 8 条音轨（实际 ' + made.length + '）');
 ok(made.every(a => a.loop === true), '每条都开了循环');
 ok(made.every(a => a.src && a.src.indexOf('blob:') === 0), '每条 src 都是 blob URL');
 ok(made.every(a => a.volume === 0), '每条初始音量 0（要靠淡入，不是一上来就炸）');
-ok(DOM.hBgm.textContent.indexOf('去看晚霞') === 0, '初始曲名 = 「' + DOM.hBgm.textContent + '」');
+/* ⚠️ 这条原先写的是「初始曲名以『去看晚霞』开头」——那是**修复前**的行为。
+     产品早就改成：用户真的动播放器之前（want && 还没 started），
+     曲名位显示「点一下画面开始」，而不是拿曲名糊上去
+     （理由见产品里 paintBgm 上方那段 ⚠️：want 是「想放」不是「在放」，
+       拿曲名盖住提示 = 按钮和耳朵说的不是一回事）。
+     它能烂这么久、烂到和产品的真实行为相反，是因为**没人跑过这一页** ——
+     它既不在 $OUT_NAMES 里，也没把真条数写进标题。补上之后第一次跑就红了。 */
+ok(DOM.hBgm.textContent === '点一下画面开始',
+   '还没开始播放时，曲名位显示「点一下画面开始」而不是曲名（实际「' + DOM.hBgm.textContent + '」）');
 
 L.push('');
 L.push('曲名 / 人声标记（8 首）：');
@@ -160,6 +168,11 @@ function runChecks(){
 
   L.push('');
   L.push(bad === 0 ? '全部通过 ✓' : bad + ' 项失败 ✗');
+  /* 标题里写**这次真的跑了**的条数。
+     这一页原先只有一个静态 <title>（"bgm harness v2"），看着像跑过、其实没跑 ——
+     而 _pages.ps1 的清点判据正是靠这行判定「这页有断言、不是恒过的」。
+     静态标题会让那句清点指令对这页变成假指令（和 drive/traffic/route 当初一样）。 */
+  document.title = (bad ? 'FAIL ' : 'PASS ') + (tot - bad) + '/' + tot;
   document.getElementById('o').textContent = L.join('\n');
 }
 </script></body></html>
