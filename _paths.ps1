@@ -75,6 +75,12 @@ $S_SWAP      = "$DIR_TOOLS\_swap.ps1"
 # 不是它），但它还留在仓库里当**事故记录** —— 里面四个坑的注释比任何
 # 文档都具体。所以给它一个出处，而不是让检查器靠字面量去排除它。
 $S_REFRACTOR = "$DIR_TOOLS\_refactor.ps1"
+# 九套回归页的**真实条数**回写 README 用。它**不是判据、不进 checkall**：
+# 无头 Chrome 渲染不了这些页面（11 MB 单文件 + 持续 rAF + 软件 WebGL，
+# 实测 150 秒被看门狗杀掉、dump 出 0 字节），所以「读标题」这一步
+# 在 PowerShell 里做不到。脚本负责另一半：开页 + 从 README 读出现值 +
+# 把新数字写回去（写完还会自证写对了）。详见该文件抬头。
+$S_RUNPAGES  = "$DIR_TOOLS\_runpages.ps1"
 
 # ── checks/：判「代码对不对」的那些 ──────────────────────────
 $S_CHECKALL  = "$DIR_CHECKS\_checkall.ps1"
@@ -96,6 +102,10 @@ $S_BGMHASH   = "$DIR_CHECKS\_bgmhash.ps1"
 # 这类 bug 能防住它的检查必须在真浏览器里跑，**CI 跑不了**，
 # 所以在这条之外另立一道纯静态的（表只收本项目实测过的事件，理由见文件抬头）。
 $S_EVENTTARGET = "$DIR_CHECKS\_eventtarget.ps1"
+# 编排器**自己的**失败传播判据。盯的是「一个 Step 里调了多个子检查时，
+# 前面的失败会不会没人检查」—— 这不是假想：它真发生过一次
+# （`_pathtest` 退出 1，而那一轮照样打「全绿」、exit 0）。
+$S_STEPFAIL  = "$DIR_CHECKS\_stepfail.ps1"
 
 # ── checks/self/：判「上面这些判据自己靠不靠谱」的那些 ─────────
 $S_SCOPETEST   = "$DIR_SELF\_scopetest.ps1"
@@ -204,9 +214,9 @@ if ($outProbeGone.Count -gt 0) {
 #  出现在上面的赋值里（_pathcheck.ps1 会反过来验这两份对不对得上）。
 $mustExist = @(
   $APP, $BGM_META, $BGM_SHA, $THREE_LIB, $README, $AGENTS, $SCREENSHOT, $GITIGNORE, $GITATTRS,
-  $S_BUILD, $S_DEPLOY, $S_SERVE, $S_SWAP, $S_REFRACTOR,
+  $S_BUILD, $S_DEPLOY, $S_SERVE, $S_SWAP, $S_REFRACTOR, $S_RUNPAGES,
   $S_CHECKALL, $S_SYNTAX, $S_FREEVAR, $S_SCOPE, $S_LINT, $S_PAGES, $S_PATHCHECK, $S_DOCCHECK, $S_CICHECK,
-  $S_BGMHASH, $S_EVENTTARGET,
+  $S_BGMHASH, $S_EVENTTARGET, $S_STEPFAIL,
   $S_SCOPETEST, $S_SYNTEST, $S_FREEVARTEST, $S_LINTTEST, $S_PAGESTEST, $S_DRIVEWIRES, $S_PATHTEST,
   $S_DOCTEST, $S_BGMHASHTEST, $S_EVENTTARGETTEST,
   $S_MKDRIVE, $S_MKTRAFFIC, $S_MKROUTE, $S_MKMOOD, $S_MKCRUISE, $S_MKMOODSTATE,

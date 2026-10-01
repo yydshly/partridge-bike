@@ -90,7 +90,7 @@ partridge-bike\
   docs\             截图
   templates\        9 个回归页模板
   gen\              13 个生成器（_mk*.ps1），从 _app3d.html 切代码段造回归页
-  tools\            _build / _deploy / _serve / _swap / _refactor
+  tools\            _build / _deploy / _serve / _swap / _refactor / _runpages
   checks\           编排器 _checkall.ps1 + 10 个判据
     self\           10 个「判据自己靠不靠谱」的反查
   dist\             **全部产物**，整目录在 .gitignore 里
@@ -146,9 +146,9 @@ partridge-bike\
 | `checks/_checkall.ps1` | **一条命令跑完全部验证**（20 步） |
 | `templates/_*.tpl.html`（9 个） | 回归页模板，套桩用 |
 | `gen/_mk*.ps1`（13 个） | 生成器：从源文件**切代码段**造回归页 |
-| `checks/`（10 个判据） | `_syntaxcheck` `_freevar` `_scopecheck` `_harnesslint` + `_pages` 清点 + `_pathcheck` 路径收口 + `_doccheck` 文档防漂移 + `_cicheck` CI 配置 + `_bgmhash` 配乐内容基线 + `_eventtarget` 事件监听目标 |
+| `checks/`（11 个判据） | `_syntaxcheck` `_freevar` `_scopecheck` `_harnesslint` + `_pages` 清点 + `_pathcheck` 路径收口 + `_doccheck` 文档防漂移 + `_cicheck` CI 配置 + `_bgmhash` 配乐内容基线 + `_eventtarget` 事件监听目标 + `_stepfail` 失败传播 |
 | `checks/self/`（10 个） | 「判据自己靠不靠谱」的反查 |
-| `tools/` | `_build` `_deploy` `_serve` `_swap` `_refactor` |
+| `tools/` | `_build` `_deploy` `_serve` `_swap` `_refactor` `_runpages` |
 | `.github/workflows/verify.yml` | CI：Windows runner + PowerShell 5.1，跑全 20 步 |
 | `dist/` | 全部产物：成品 + 8 个回归页 + 1 诊断页 + 3 个探针页（整目录 gitignore） |
 | `AGENTS.md` | 项目记忆与方法论（踩过的坑都在里面） |
@@ -236,7 +236,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\checks\_bgmhash.ps1 -Updat
 所以配了 `checks\self\_doctest.ps1` 四条反查。
 
 九套回归页在 `dist\`，是浏览器页面，脚本生成不了结论，要人眼各开一次
-（标题会变成 `PASS n/m`，那个才是这次的真实条数）：
+（标题会变成 `PASS n/m`，那个才是这次的真实条数）。
+
+**打开它们、并把条数写回本文档，用这个脚本**：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\_runpages.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\_runpages.ps1 -Set 58/58,34/34,39/39,450/450,85/85,41/41,71/71,119/119,63/63
+```
+
+第一条打开九页并打印本文档现在写的数字，第二条（**逗号分隔**）把实跑结果
+写回去——顺序就是 `$OUT_NAMES` 的顺序，格式由脚本保证不会写错行。
+它写完会**读回来核对**：九个数字对得上、且长度只变了该变的那么多，才算成功。
+
+⚠️ **它只做得了这一半。** 「读标题」那一步它做不到：无头 Chrome 渲染不了
+这些页面（11 MB 单文件 + 持续 rAF + 软件 WebGL，实测 150 秒被看门狗杀掉、
+dump 出 0 字节）。所以那九个数字**只能人看或 agent 用浏览器逐个开**，
+脚本不假装能算出来——那样造出来的是一个「看着全自动、实际只会打 0 条」的脚本，
+比没有更糟。
 
 `dist\_driveharness.html` · `dist\_trafficharness.html` · `dist\_routeharness.html` ·
 `dist\_moodharness.html` · `dist\_cruiseharness.html` · `dist\_moodstate.html` ·
@@ -255,8 +272,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\checks\_bgmhash.ps1 -Updat
 （还在断言修复前的「初始曲名 = 第一首曲名」，而产品早就改成播放前显示
 「点一下画面开始」），**一直没人发现**，因为没人跑过它。补进清单后第一次跑就红了 62/63。
 
-九套实测（2026-10-01，布局挪位那批改动之后）：`58/58` · `34/34` · `39/39` ·
-`450/450` · `85/85` · `41/41` · `71/71` · `119/119` · `63/63`。
+九套实测（2026-10-01，实跑见 tools\_runpages.ps1）：`58/58` · `34/34` · `39/39` · `450/450` · `85/85` · `41/41` · `71/71` · `119/119` · `63/63`。
 
 ## CI
 

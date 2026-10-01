@@ -23,6 +23,7 @@ $fail = 0
 # 算出来的值不可能和实际脱节 —— 脱节在结构上就不存在了。
 $stepTotal = ([regex]::Matches([IO.File]::ReadAllText($PSCommandPath), "(?m)^Step\s+'")).Count
 $stepNo = 0
+$script:failNames = @()
 function Step($name, $block){
   $script:stepNo++
   # 剥掉调用处手打的那串编号，剩下的才是步骤名
@@ -32,7 +33,29 @@ function Step($name, $block){
   Write-Output ''
   Write-Output ("========== {0} ==========" -f $label)
   & $block
-  if ($LASTEXITCODE -ne 0) { $script:fail++; Write-Output ("  >>> {0} 退出码 {1}" -f $label, $LASTEXITCODE) }
+  # ⚠️ 这里**只能**反映最后一个外部命令的退出码。一个 Step 里调了十一个
+  #    子检查，中间任何一个红了都会被后面成功的那个盖掉 ——
+  #    实测 `_pathtest` 退出 1，第 17 步照样报「全绿」。
+  #    所以**一步里要调多个子检查，就必须用 Run**，它按每一个的退出码累加。
+  if ($LASTEXITCODE -ne 0) { $script:fail++; $script:failNames += ($label + '（最后一条）'); Write-Output ("  >>> {0} 退出码 {1}" -f $label, $LASTEXITCODE) }
+}
+# Run：跑一个子检查，并**自己**按它的退出码记账。
+#   这不是风格问题，是「假的全绿」：第 17 步曾把 `_pathtest` 的失败
+#   静默吞掉（被后面 5 个成功调用的退出码覆盖），而收尾照样打「########## 全绿」。
+#   —— 和 AGENTS.md 里那条「逐项都对、汇总是 0」是同一族病。
+#   checks\_stepfail.ps1 会在 CI 里盯住「不许出现裸的 & $ps 」。
+function Run($f, [string]$Path) {
+  $global:LASTEXITCODE = 0
+  if ($Path) { & powershell -NoProfile -ExecutionPolicy Bypass -File $f -Path $Path }
+  else       { & powershell -NoProfile -ExecutionPolicy Bypass -File $f }
+  $c = $LASTEXITCODE
+  $leaf = [IO.Path]::GetFileName($f)
+  if ($c -ne 0) {
+    $script:fail++
+    $script:failNames += ($leaf + ' 退出码 ' + $c)
+    Write-Output ("  >>> 子检查失败：" + $leaf + " 退出码 " + $c)
+  }
+  return $c
 }
 # ⚠️ 第二个参数**必须叫 $Path**：调用处写的是 `& $ps $S_SYNTAX -Path $APP`，
 #    命名参数按名字绑定。之前写成 $p，`-Path` 匹配不上就被丢进 $args，
@@ -71,8 +94,12 @@ Step '13/20 鹧鸪状态机（生成）' { & $ps $S_MKMOODSTATE }
 # 单独为它开一步会让 20 变 21，而步数是 README / AGENTS / 收尾提示三处
 # 同时声明的数字；它自己的反查在第 17 步（那一组全是「判据 + 反查」）。
 Step '14/20 静态语义体检（作用域 + 事件监听目标）' {
-  & $ps $S_SCOPE
-  & $ps $S_EVENTTARGET
+  # ⚠️ 这两条**必须**逐个用 Run。第一版写的是两个裸 `& $ps`，
+  #    于是 $S_SCOPE 红了会被 $S_EVENTTARGET 的退出码盖掉 ——
+  #    是 checks\_stepfail.ps1 把它抓出来的（它抠出 Run 的真源码实跑，
+  #    再造「先失败后成功」这个当初会漏报的组合）。
+  Run $S_SCOPE
+  Run $S_EVENTTARGET
 }
 Step '15/20 交付自检' {
   $t = [IO.File]::ReadAllText(($PRODUCT))
@@ -155,23 +182,29 @@ Step '15/20 交付自检' {
 }
 Step '16/20 作用域检查器自检（喂它一份已知坏样本）' { & $ps $S_SCOPETEST }
 Step '17/20 语法/自由变量/悬空调用/路径/文档/CI/音频基线 检查器自检' {
-  & $ps $S_SYNTEST
-  & $ps $S_FREEVARTEST
-  & $ps $S_LINTTEST
-  & $ps $S_PAGESTEST
-  & $ps $S_DRIVEWIRES
-  & $ps $S_PATHTEST
-  & $ps $S_DOCTEST
-  # CI 配置判据放在这一步，而不是单开一步，是为了**不把 20 变成 21** ——
-  # 步数是 README / AGENTS / 收尾提示三处同时声明的数字，每加一步要同步三处。
-  # 而它验的确实是同一类东西（判据 + 它自己的反查），归在这一步不勉强。
-  & $ps $S_CICHECK
-  # mp3 内容基线，同一个理由进这一步：它也是「判据 + 反查」这一对。
-  # 两个都挂：判据必须被编排器**直接**调一次 —— 只靠反查内部去调它，
-  # 那哪天反查里删掉那一行，这条判据就没人跑了，而没人跑 == 没有检查。
-  & $ps $S_BGMHASH
-  & $ps $S_BGMHASHTEST
-  & $ps $S_EVENTTARGETTEST
+  # 这一步调**十一个**子检查，所以必须逐个用 Run ——
+  # 原来写的是裸 `& $ps …`，而 Step 只看 $LASTEXITCODE（= 最后一条），
+  # 于是中间任何一个红了都会被后面成功的盖掉，整轮照样打「全绿」。
+  #
+  # 收在这一步而不是各占一步，是为了**不把 20 变成 21** ——
+  # 步数是 README / AGENTS / 收尾提示三处同时声明的数字，每加一步要同步三处；
+  # 而它们验的确实是同一类东西（判据 + 它自己的反查）。
+  # 判据**必须**被编排器直接调一次：只靠反查内部去调它，
+  # 哪天反查里删掉那一行，这条判据就没人跑了，而没人跑 == 没有检查。
+  Run $S_SYNTEST
+  Run $S_FREEVARTEST
+  Run $S_LINTTEST
+  Run $S_PAGESTEST
+  Run $S_DRIVEWIRES
+  Run $S_PATHTEST
+  Run $S_DOCTEST
+  Run $S_CICHECK
+  Run $S_BGMHASH
+  Run $S_BGMHASHTEST
+  Run $S_EVENTTARGETTEST
+  # 它自己也走 Run —— 这条判据盯的正是「本文件里有没有子检查没人管」，
+  # 而它自己要是走裸调用，就正好示范了它要禁止的写法。
+  Run $S_STEPFAIL
 }
 
 # ⚠️ 这一步以前**不存在**，而 A 阶段做的正是同一件事 —— 但它当时只活在
@@ -238,5 +271,15 @@ if ($fail -eq 0) {
   Write-Output '     2026-09-30 就是「全绿 + 画面全黑」交出去的（frame() 缺 dt 声明）。'
 } else {
   Write-Output ("########## {0} 项失败 ##########" -f $fail)
+  # 只印「N 项失败」等于没说：人得自己翻上去找是哪一条。
+  # 名字在记账的那一刻就攒好（Step 和 Run 都往 $script:failNames 里塞），
+  # 所以这里逐条列出来 —— 这一段是**为了让上面那个假绿不再静默**。
+  if ($script:failNames.Count -gt 0) {
+    Write-Output '  失败的检查：'
+    foreach ($fn in $script:failNames) { Write-Output ('    - ' + $fn) }
+  } else {
+    Write-Output '  ⚠️ 计数不对上：$fail = ' + $fail + '，但失败清单是空的。'
+    Write-Output '     （这就是「逐项红了、汇总却是 0」那族病。别信上面的计数，去看上面各步的输出。）'
+  }
   exit 1
 }
