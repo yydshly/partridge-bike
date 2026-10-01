@@ -1325,7 +1325,18 @@ const M = {
   beacon: new THREE.MeshStandardMaterial({ color:0x5a2622, roughness:0.5, emissive:0xff3b30, emissiveIntensity:0 }),
   glassLit:new THREE.MeshStandardMaterial({ color:0x2b2721, roughness:0.3, emissive:0xffc978, emissiveIntensity:0 }),
     frame:  new THREE.MeshStandardMaterial({ color:0xe9e3d4, roughness:0.88 }),
-  frameD: new THREE.MeshStandardMaterial({ color:0x4a3f33, roughness:0.92 })
+  frameD: new THREE.MeshStandardMaterial({ color:0x4a3f33, roughness:0.92 }),
+  /* ── 六段招牌元素用的四样（2026-10-01）。
+     刻意都复用已有的贴图/材质名，不新开一批 —— 每多一种材质，
+     切雪时 SNOWY 那张表就多一个要记得填的格子。 */
+  buoy:   new THREE.MeshStandardMaterial({ color:0xd9503c, roughness:0.62 }),
+  litter: new THREE.MeshStandardMaterial({ color:0x8a6b3c, roughness:1, flatShading:true }),
+  skin:   new THREE.MeshStandardMaterial({ color:0xd6a87c, roughness:0.86 }),
+  /* 网用 wireframe：实心的板会读成"晾着的布"，有格子才看得出是网 ——
+     而这张网是整条河堤上唯一和"渔"有关的东西。 */
+  net:    new THREE.MeshStandardMaterial({ color:0xd6cbad, roughness:1,
+                                           transparent:true, opacity:0.5,
+                                           side:THREE.DoubleSide, wireframe:true })
 };
 
 const world = [];      // { obj, span }
@@ -1339,7 +1350,11 @@ const SNOWY = [
   ['leafA',0.45],['leafB',0.45],['leafC',0.45],['leafD',0.45],['leafE',0.45],['leafF',0.45],
   ['bush',0.40],['tuft',0.35],['reed',0.30],['conifer',0.58],['willow',0.35],
   ['roofSlate',0.78],['roofTile',0.78],['plank',0.32],['stone',0.45],['plaster',0.40],
-  ['kmStone',0.30],['cloth',0.45],['marker',0.35],['rock',0.30],['dirt',0.30]
+  ['kmStone',0.30],['cloth',0.45],['marker',0.35],['rock',0.30],['dirt',0.30],
+  /* 招牌元素那四样。比例按「看起来该积多少」定的：
+     落叶是雪压住的（0.30），网会挂一层（0.20），浮标和红白漆一样显眼（0.20）；
+     脸只给一点点（0.08），再多就成雪人了。 */
+  ['litter',0.30],['net',0.20],['buoy',0.20],['skin',0.08]
 ];
 for (const [k] of SNOWY) M[k].userData.baseCol = M[k].color.getHex();
 function addRecycled(obj, span){ obj.userData.span = span; props.add(obj); world.push(obj); }
@@ -1651,6 +1666,281 @@ function makeBoulder(){
   return g;
 }
 
+/* ══════════════════ 六段各加的招牌元素 ══════════════════
+   前面那六样（篱笆/芦苇/隧道树/碎石/房子/护栏）是**每段一件**，
+   段和段之间的差别已经立起来了。这次补的是每段的**第二件**，
+   挑的标准只有一条：**这一段缺了什么、少了它就不像这一段**。
+     村口 —— 缺一个「进村了」的界标      → 牌楼 + 水井
+     河堤 —— 缺任何和「水」有关的硬东西  → 排水闸 + 晾网架
+     林荫 —— 缺地面上的东西（只有树）    → 落叶堆 + 长椅
+     长坡 —— 缺挡土的暗示                → 护坡石墙 + 坡顶界碑
+     镇子 —— 台词说「别撞着人」但没有人  → 行人 + 门牌
+     长桥 —— 桥只是一块画片              → 索塔 + 桥头碑
+   这十二件全部 own 独占一段，和上面六样同一个机制。 */
+
+/* 牌楼：给「村口」用。**唯一一件跨在路面上方的东西**（B.over），
+   所以它的两条柱脚必须落在路面之外 —— 这条由 _uistate 的
+   「路面正上方 2 m 内是空的」那条判据盯着，不是靠自觉。
+   ⚠️ 屋脊**横跨马路**（局部 z，和两根柱子连成一道墙），瓦面朝街道
+   两侧（±x）下坡。从骑手正面看过去，屋脊是一条横的水平线。
+   我一度把它改成了「沿路走脊、往两侧下坡」，那读出来是一道山墙
+   —— 那是山门照壁，不是牌楼。 */
+function makeArchway(){
+  const g = new THREE.Group();
+  const H = 4.2, half = 2.6;
+  for (const s of [1,-1]){
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.34, 0.66), M.stone);
+    foot.position.set(0, 0.17, s*half); foot.castShadow = true; g.add(foot);
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.42, H, 0.42), M.stone);
+    p.position.set(0, H/2, s*half); p.castShadow = true; g.add(p);
+  }
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.80, half*2 + 0.9), M.stone);
+  beam.position.y = H + 0.40; beam.castShadow = true; g.add(beam);
+  for (const s of [1,-1]){
+    const r = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.10, half*2 + 1.4), M.roofTile);
+    r.position.set(s*0.30, H + 0.90, 0); r.rotation.z = -s*0.40; g.add(r);
+  }
+  const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.16, half*2 + 1.8), M.roofTile);
+  ridge.position.y = H + 1.08; g.add(ridge);
+  // 匾额留素面：近处是一块石板，远处是一道剪影，两种距离都认得出是门。
+  // 骑手朝 -x 走，所以牌面挂在 -x 那侧 —— 挂错了方向，从后面看是一片空白。
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.72, 1.66), M.frameD);
+  frame.position.set(-0.28, H + 0.40, 0); g.add(frame);
+  const face = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.58, 1.50), M.marker);
+  face.position.set(-0.335, H + 0.40, 0); g.add(face);
+  return g;
+}
+
+/* 水井：给「村口」用。井筒 + 辘轳 + 吊桶。
+   关键是辘轳那根横梁和垂下来的桶 —— 没有它们，井就是路边一个圆坑。 */
+function makeWell(){
+  const g = new THREE.Group();
+  const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.68, 0.54, 12), M.stone);
+  rim.position.y = 0.27; rim.castShadow = true; g.add(rim);
+  const hole = new THREE.Mesh(new THREE.CircleGeometry(0.48, 12), M.water);
+  hole.rotation.x = -Math.PI/2; hole.position.y = 0.47; g.add(hole);
+  for (const s of [1,-1]){
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.068, 1.60, 5), M.post);
+    p.position.set(0, 0.80, s*0.56); p.castShadow = true; g.add(p);
+  }
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.24, 5), M.post);
+  bar.rotation.x = Math.PI/2; bar.position.y = 1.56; g.add(bar);
+  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.46, 8), M.plank);
+  drum.rotation.z = Math.PI/2; drum.position.set(0.17, 1.20, 0); g.add(drum);
+  const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.60, 4), M.wire);
+  rope.position.set(0.30, 0.88, 0); g.add(rope);
+  const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.135, 0.115, 0.21, 8), M.plank);
+  bucket.position.set(0.30, 0.47, 0); g.add(bucket);
+  return g;
+}
+
+/* 排水闸：给「河堤」用。翼墙夹一道锈死的闸门，顶上一个手摇绞盘。
+   门开不开是另一回事 —— 要的是「这里有个能开合的口子」这件事看得见。 */
+function makeSluice(){
+  const g = new THREE.Group();
+  for (const s of [1,-1]){                       // 两片翼墙，水道从中穿过
+    const w = new THREE.Mesh(new THREE.BoxGeometry(1.90, 2.10, 0.34), M.stone);
+    w.position.set(0, 1.05, s*1.24); w.castShadow = true; g.add(w);
+  }
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(2.10, 0.24, 3.10), M.stone);
+  deck.position.y = 2.20; deck.castShadow = true; g.add(deck);
+  const gate = new THREE.Mesh(new THREE.BoxGeometry(0.11, 1.52, 2.14), M.rust);
+  gate.position.set(0, 0.80, 0); gate.castShadow = true; g.add(gate);
+  for (const y of [0.44, 1.14]){                 // 闸门的两道加劲肋
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.11, 2.14), M.metal);
+    rib.position.set(0, y, 0); g.add(rib);
+  }
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 1.60, 6), M.metal);
+  col.position.set(0, 0.80, 1.86); g.add(col);
+  const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.045, 5, 12), M.metal);
+  wheel.position.set(0, 1.72, 1.86); wheel.rotation.y = Math.PI/2; g.add(wheel);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.66, 5), M.metal);
+  shaft.rotation.x = Math.PI/2; shaft.position.set(0, 1.42, 1.60); g.add(shaft);
+  return g;
+}
+
+/* 晾网架：给「河堤」用。两根杆 + 一道横梁 + 两片挂着的网 + 一个浮球。
+   这段原先只有芦苇，全是竖的东西；横杆一挂上，节奏就断了。 */
+function makeNetRack(){
+  const g = new THREE.Group();
+  const H = 2.55, w = 1.55;
+  for (const s of [1,-1]){
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.074, H, 5), M.post);
+    p.position.set(0, H/2, s*w/2); p.castShadow = true; g.add(p);
+  }
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, w + 0.5, 5), M.post);
+  bar.rotation.x = Math.PI/2; bar.position.y = H - 0.12; g.add(bar);
+  for (const s of [1,-1]){
+    const net = new THREE.Mesh(new THREE.PlaneGeometry(w*0.92, 1.45, 6, 5), M.net);
+    net.position.set(s*0.07, H - 0.96, 0);
+    net.rotation.y = -s*0.12;
+    g.add(net);
+  }
+  const flt = new THREE.Mesh(new THREE.SphereGeometry(0.115, 7, 6), M.buoy);
+  flt.position.set(0.02, H - 1.80, 0.22); g.add(flt);
+  return g;
+}
+
+/* 落叶堆：给「林荫」用。几片压扁的圆片叠在草上。
+   这一段整条路两旁只有树，地面是空的；踩上去一层落叶才像林子。 */
+function makeLitter(){
+  const g = new THREE.Group();
+  const n = 2 + (rnd()*3|0);
+  for (let i=0;i<n;i++){
+    const r = 0.20 + rnd()*0.28;
+    const p = new THREE.Mesh(new THREE.CircleGeometry(r, 6), M.litter);
+    p.rotation.x = -Math.PI/2; p.rotation.z = rnd()*3;
+    p.position.set((rnd()-0.5)*0.85, 0.013 + i*0.005, (rnd()-0.5)*0.85);
+    p.receiveShadow = true;
+    g.add(p);
+  }
+  return g;
+}
+
+/* 长椅：给「林荫」用。三条坐板 + 三条靠背 + 两条铁腿。
+   靠背朝着**背离路**的那边（B.side 固定 1，noRot），
+   于是骑过去看到的是有人面朝路坐着的那一面。 */
+function makeBench(){
+  const g = new THREE.Group();
+  for (const s of [1,-1]){
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.45, 0.44), M.metal);
+    leg.position.set(s*0.62, 0.22, 0); leg.castShadow = true; g.add(leg);
+  }
+  for (let i=0;i<3;i++){
+    const s = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.05, 0.135), M.plank);
+    s.position.set(0, 0.46, -0.17 + i*0.17); s.castShadow = true; g.add(s);
+  }
+  for (let i=0;i<3;i++){                        // 靠背在 +z：那是背离路的一侧
+    const b = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.13, 0.05), M.plank);
+    b.position.set(0, 0.62 + i*0.155, 0.25 - i*0.012);
+    b.rotation.x = -0.15;
+    g.add(b);
+  }
+  return g;
+}
+
+/* 护坡石墙：给「长坡」用。路面是平的，做不出真坡度（bump 只是搓板），
+   那就用「路肩顶着一道挡土墙」来暗示这是爬坡段 —— 真长坡就是这样。
+   墙身长度就等于这一跨的间距，所以几段接得上，看不出缝。 */
+function makeRevetment(gap){
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(gap, 0.92, 0.40), M.stone);
+  body.position.y = 0.46; body.castShadow = true; g.add(body);
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(gap, 0.14, 0.56), M.stone);
+  cap.position.y = 0.99; cap.castShadow = true; g.add(cap);
+  // 压两排横向的凹缝：20 m 长的光板会读成一堵白墙，接缝才读得出是一块块砌的
+  for (const y of [0.30, 0.64]){
+    const j = new THREE.Mesh(new THREE.BoxGeometry(gap, 0.035, 0.425), M.rock);
+    j.position.set(0, y, 0.008); g.add(j);
+  }
+  return g;
+}
+
+/* 坡顶界碑：给「长坡」用。比里程碑高一倍、宽一倍、底下多一级台阶 ——
+   路边那些矮的是「这里到哪儿了」，这个是「爬到头了」。 */
+function makeSummitStone(){
+  const g = new THREE.Group();
+  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.17, 0.38), M.stone);
+  foot.position.y = 0.085; foot.castShadow = true; g.add(foot);
+  const st = new THREE.Mesh(new THREE.BoxGeometry(0.30, 1.16, 0.20), M.kmStone);
+  st.position.y = 0.59; st.rotation.z = 0.03; st.castShadow = true; g.add(st);
+  const band = new THREE.Mesh(new THREE.BoxGeometry(0.312, 0.15, 0.214), M.frameD);
+  band.position.y = 0.88; g.add(band);
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.12, 0.29), M.stone);
+  cap.position.y = 1.21; g.add(cap);
+  return g;
+}
+
+/* 行人：给「镇子」用。这一段的台词是「慢下来，别撞着人」，
+   而画面里原本**一个人都没有**（只有对向车流）—— 说了话没有兑现。
+   头身按 rr() 抽，同一条街上高矮不一才像人；不给脸，五官在这种距离
+   只会变成噪点。 */
+function makePedestrian(){
+  const g = new THREE.Group();
+  const h = rr(1.60, 1.82);
+  const top = rnd() < 0.5 ? M.barnRed : M.cloth;
+  const bot = rnd() < 0.5 ? M.plank  : M.pole;
+  for (const s of [1,-1]){
+    const l = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.048, h*0.46, 5), bot);
+    l.position.set(s*0.086, h*0.23, 0); l.castShadow = true; g.add(l);
+  }
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.156, 0.134, h*0.34, 7), top);
+  torso.position.y = h*0.63; torso.castShadow = true; g.add(torso);
+  for (const s of [1,-1]){
+    const a = new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.036, h*0.28, 4), top);
+    a.position.set(s*0.188, h*0.60, 0.02); a.rotation.z = s*0.14; g.add(a);
+  }
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.062, 0.08, 5), M.skin);
+  neck.position.y = h*0.80; g.add(neck);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.107, 8, 6), M.skin);
+  head.position.y = h*0.88; g.add(head);
+  return g;
+}
+
+/* 门牌：给「镇子」用。房子是各自回收的，没法把牌子挂到墙上，
+   所以做成**自己站在路边的小牌** —— 反正镇子上牌子和门一样密。 */
+function makeDoorPlate(){
+  const g = new THREE.Group();
+  const p = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.034, 1.06, 5), M.post);
+  p.position.y = 0.53; p.castShadow = true; g.add(p);
+  const edge = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.35, 0.27), M.frameD);
+  edge.position.set(-0.014, 1.01, 0); g.add(edge);
+  const face = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.30, 0.22), M.marker);
+  face.position.set(0.018, 1.01, 0); g.add(face);
+  return g;
+}
+
+/* 索塔：给「长桥」用。全场最高的一件（9.4 m），也是长桥唯一
+   能让人知道「脚下这段是桥」的东西 —— 桥本身只是一块画片。
+   拉索**不锚在路面上**：锚在路对面去，跨过路面时离地 4 m 以上，
+   骑过去从索底下穿。真锚在路面上就没法骑了。 */
+function makePylon(){
+  const g = new THREE.Group();
+  const H = 9.4;
+  const plinth = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.42, 1.15), M.stone);
+  plinth.position.y = 0.21; plinth.castShadow = true; g.add(plinth);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.36, H, 8), M.silo);
+  mast.position.y = H/2; mast.castShadow = true; g.add(mast);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(3.10, 0.26, 0.30), M.silo);
+  arm.position.set(1.55, H - 0.75, 0); g.add(arm);
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.34, 0.72), M.silo);
+  cap.position.y = H + 0.12; g.add(cap);
+  const top = V(0.34, H - 0.88, 0);
+  /* 锚点必须**越过路面对侧的边**（z < T_MIN = -2.925）才成。
+     塔在 z=+3.325，所以局部 +x 要走够 6.25 m 才到路边。
+     6.2 正好差 5 cm —— 判据实测到锚点落在 z=-2.86、离地 0.44 m，
+     那就是横在路沿上的一道绊索。取 9.0：路边净空 3.0 m，路心 4.4 m。 */
+  for (const sz of [1, -1]) for (const ad of [3.2, 5.8]){
+    const a = V(9.0, 0.45, sz*ad);
+    const dir = a.clone().sub(top);
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, dir.length(), 4), M.wire);
+    c.position.copy(top.clone().add(a).multiplyScalar(0.5));
+    c.quaternion.setFromUnitVectors(V(0,1,0), dir.clone().normalize());
+    g.add(c);
+  }
+  const bcn = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 6), M.beacon);
+  bcn.position.y = H + 0.42; g.add(bcn);
+  return g;
+}
+
+/* 桥头碑：给「长桥」用。基座 + 碑身 + 圆首。
+   圆首要的是「半球压扁」而不是半圆柱 —— 圆柱转不对方向，
+   读出来是一截管子。 */
+function makeBridgeStele(){
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.27, 0.74), M.stone);
+  base.position.y = 0.135; base.castShadow = true; g.add(base);
+  const step = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.19, 0.58), M.stone);
+  step.position.y = 0.36; g.add(step);
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.46, 0.18), M.kmStone);
+  slab.position.y = 1.17; slab.castShadow = true; g.add(slab);
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.31, 12, 7, 0, 6.283, 0, 1.571), M.kmStone);
+  dome.scale.set(1, 0.72, 0.30); dome.position.y = 1.90; g.add(dome);
+  const face = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.10, 0.42), M.frameD);
+  face.position.set(0.10, 1.18, 0); g.add(face);
+  return g;
+}
+
 const BANDS = [
   { tag:'grass', n:52, z:[2.15, 2.80], span:110, build:() => makeGrassPatch() },
   { tag:'flower',n:22, z:[2.20, 3.00], span:110, build:() => makeFlower() },
@@ -1701,6 +1991,29 @@ const BANDS = [
      gap 就是组间距（96/18），横杆按这个长度做，两段接得上、看不出缝。 */
   { id:'rail',  own:'rail',  tag:'rail',  n:18, z:[3.05, 3.05], span:96,  side:1, noRot:true,
     build:function(){ return makeRail(96/18); } },
+  /* ── 六段各加的招牌元素（12 件）。挑的标准只有一条：
+       **这一段缺了什么、少了它就不像这一段**。
+         村口  缺一个「进村了」的界标        牌楼 + 水井
+         河堤  缺任何和「水」有关的硬东西    排水闸 + 晾网架
+         林荫  缺地面上的东西（两旁只有树）  落叶堆 + 长椅
+         长坡  缺挡土的暗示                  护坡石墙 + 坡顶界碑
+         镇子  台词说「别撞着人」但没有人    行人 + 门牌
+         长桥  桥只是一块画片                索塔 + 桥头碑
+     全部 own 独占一段，和上面六样同一个机制。数量都压得很低 ——
+     这十二件加起来 58 个物件，再往上加帧率就明显了（叶片最贵）。 */
+  { id:'gate',    own:'gate',    n:2,  z:[0,0],      span:96,  over:true, noRot:true, build:() => makeArchway() },
+  { id:'well',    own:'well',    n:3,  z:[4.30,5.80],span:96,  side:-1, noRot:true, build:() => makeWell() },
+  { id:'sluice',  own:'sluice',  n:2,  z:[5.20,6.00],span:110, side:-1, face:'road', build:() => makeSluice() },
+  { id:'netrack', own:'netrack', n:4,  z:[3.90,5.30],span:110, build:() => makeNetRack() },
+  { id:'litter',  own:'litter',  n:12, z:[3.10,4.50],span:130, noRot:true, build:() => makeLitter() },
+  { id:'bench',   own:'bench',   n:3,  z:[3.40,4.10],span:110, side:1,  noRot:true, build:() => makeBench() },
+  { id:'revet',   own:'revet',   n:14, z:[3.50,3.50],span:130, side:1,  noRot:true,
+    build:function(){ return makeRevetment(130/14); } },
+  { id:'summit',  own:'summit',  n:2,  z:[3.00,3.60],span:120, side:-1, noRot:true, build:() => makeSummitStone() },
+  { id:'walker',  own:'walker',  n:6,  z:[3.10,5.20],span:90,  build:() => makePedestrian() },
+  { id:'plate',   own:'plate',   n:8,  z:[3.50,4.00],span:90,  face:'road', build:() => makeDoorPlate() },
+  { id:'pylon',   own:'pylon',   n:2,  z:[4.30,4.30],span:150, side:1,  face:'road', build:() => makePylon() },
+  { id:'stele',   own:'stele',   n:2,  z:[4.40,5.20],span:150, side:-1, noRot:true, build:() => makeBridgeStele() },
   /* 碎石堆：own:'boulder' ⇒ 只有「长坡」。22 堆 / 130 m ⇒ 每 5.9 m，
      贴路边（z 3.2~4.6）。爬坡段的路面材料是碎的不是平的，这个一眼能读出来。 */
   { id:'boulder', own:'boulder', tag:'boulder', n:22, z:[3.20, 4.60], span:130, build:() => makeBoulder() },
@@ -1721,8 +2034,17 @@ for (const B of BANDS){
   for (let i=0;i<B.n;i++){
     const side = B.side || ((i % 2) ? 1 : -1);
     const o = B.build.call({ n:B.n, gap });
-    o.position.set((i/B.n)*B.span - B.span*0.5, 0, side*rr(B.z[0], B.z[1]) - LANE);
-    o.rotation.y = B.noRot ? 0 : rnd()*6.28;
+    /* B.over：**跨在路面上方**的构件（村口的牌楼）。它必须落在路中心 ——
+       柱脚的横向偏移是构造函数自己排的，而 BAND 只会把整组东西摆到路边，
+       摆路边的话牌楼就成了立在草地上的两根柱子，门是开在土里的。
+       这时候 z:[a,b] 不参与计算（写了也只是写着好看）。 */
+    o.position.set((i/B.n)*B.span - B.span*0.5, 0,
+                   B.over ? -LANE : side*rr(B.z[0], B.z[1]) - LANE);
+    /* face:'road' —— 让局部 +x 朝着路。闸门的门面、门牌的字面、
+       索塔的横担都得正对来车，rnd() 随机转的话有一半时间是背面朝人。 */
+    o.rotation.y = B.noRot ? 0
+                 : (B.face === 'road' ? (o.position.z > -LANE ? Math.PI/2 : -Math.PI/2)
+                                      : rnd()*6.28);
     if (o.userData.lamp) lamps.push(o);
     B.objs.push(o);
     addRecycled(o, B.span);
@@ -3651,19 +3973,19 @@ for (let i=0;i<VIG_N;i++){
 const ROUTE = [
   { name:'村口', km:0.9, trk:0,
     vig:[vgFarm, vgHay, vgShelter, vgMast],
-    fence:true,
+    fence:true, gate:true, well:true,
     w:{ tree:0.80, bush:1.15, rock:0.55, flower:1.30, hill:1.00 },
     say:'鹧鸪：出了<strong>村口</strong>，前面是<strong>河堤</strong>' },
   { name:'河堤', km:0.8, trk:4,
     vig:[vgPond, vgBridge, vgShelter, vgMast],
-    reed:true,
+    reed:true, sluice:true, netrack:true,
     /* 石头从 1.25 压到 0.55：原来的权重让河堤是六段里石头最多的，
        看着像采石场。堤上应该是水草多、石头少。 */
     w:{ tree:0.45, bush:0.70, rock:0.55, flower:0.80, grass:1.25, hill:0.75 },
     say:'鹧鸪：上了<strong>河堤</strong>，水边<strong>风大</strong>，慢点' },
   { name:'林荫', km:0.7, trk:5,
     vig:[vgHay, vgMast, vgShelter, vgFarm],
-    tunnel:true,
+    tunnel:true, litter:true, bench:true,
     /* tag 的 tree:1.00 留给远处的几带（treeFar/treeLine/treeSky），那是"隧道尽头还有林子"。
        近树和树墙按 id 单独压：treeNear 矮、站在隧道树前面会把路挡成一道绿墙；
        treeMid 在隧道后面再排一列，纵深就没了 —— 隧道必须是最后面才收口的那一排。
@@ -3673,19 +3995,19 @@ const ROUTE = [
     say:'鹧鸪：进<strong>林荫</strong>了，树一棵一棵往后退' },
   { name:'长坡', km:1.2, trk:1,
     vig:[vgMill, vgTower, vgMast, vgShelter],
-    boulder:true,
+    boulder:true, revet:true, summit:true,
     w:{ tree:0.35, bush:0.50, rock:1.35, flower:0.45, hill:1.45 },
     say:'鹧鸪：<strong>长坡</strong>！这段得攒点劲' },
   { name:'镇子', km:0.5, trk:6,
     vig:[vgFarm, vgTower, vgShelter, vgMast],
-    house:true,
+    house:true, walker:true, plate:true,
     /* 树从 0.55 压到 0.40：镇子里树比屋少，屋才是主角；
        lamp 没写就是默认 1.0，五盏路灯本来就全开，镇子该有的。 */
     w:{ tree:0.40, bush:0.70, rock:0.40, flower:1.00, hill:0.70 },
     say:'鹧鸪：进<strong>镇子</strong>了，慢下来，别撞着人' },
   { name:'长桥', km:0.9, trk:7,
     vig:[vgBridge, vgPond, vgMast, vgMill],
-    rail:true,
+    rail:true, pylon:true, stele:true,
     w:{ tree:0.40, bush:0.60, rock:0.95, flower:0.70, grass:0.85, hill:0.85 },
     say:'鹧鸪：上<strong>长桥</strong>了，一直往前吧' }
 ];
@@ -3713,17 +4035,27 @@ function routeName(km){ return ROUTE[segAt(km)].name; }
    (km - seg.at) 必须先归一化到 ±ROUTE_LEN/2，取**最近的那一次**。
    不归一化的话，骑到第 6 公里时 d 会是 5000，权重恒等于 0，
    表现为「绕一圈之后所有段专属物件再也不出现了」。 */
-const SEG_BLEND = 0.15;                        // km：进出各 150 m 渐变
-/* 第 i 段在 km 处「有多少」。段内为 1，出了段界在 SEG_BLEND 内降到 0。
-   抽成按**段号**取，是因为现在有两样东西都要它：段专属物件的权重，
-   以及六段各自的光。共用一个函数才不会出现「物件渐变了、光没渐变」。 */
-function segAmt(i, km){
+const SEG_BLEND = 0.15;                        // km：物件的进出渐变
+/* 段的光走**更长的**渐变，而且这个「更长」不是拍脑袋定的 ——
+   它被 ROUTE 里最短的一段卡死：镇子只有 0.5 km。
+   渐变距离一旦超过 最短段长/2 = 0.25 km，长坡的尾巴就会伸进镇子中点，
+   于是「镇子中点的光 = 镇子档案值」这条判据当场变红（我第一版取
+   0.45 km 就是这么翻的）。要再拉长就得先把最短的那段加长，
+   而改段长就是改整条路线的节奏 —— 那是审美，不是工程。
+   0.25 km 是「不动节奏」能拿到的最大值。 */
+const SEG_BLEND_LIGHT = 0.25;
+/* 第 i 段在 km 处「有多少」。段内为 1，出了段界在 blend 内降到 0。
+   抽成按**段号**取，是因为现在有三样东西都要它：段专属物件的权重、
+   六段各自的光、以及要拿它来量「过渡有多陡」的判据。
+   共用一个函数才不会出现「物件渐变了、光没渐变」。 */
+function segAmt(i, km, blend){
   const seg = ROUTE[i];
+  const B = (blend === undefined) ? SEG_BLEND : blend;
   let d = (km - seg.at) % ROUTE_LEN;
   if (d < 0) d += ROUTE_LEN;
   if (d > ROUTE_LEN/2) d -= ROUTE_LEN;
-  if (d < 0)      return clamp(1 + d/SEG_BLEND, 0, 1);             // 段前：-0.15→0，0→1
-  if (d > seg.km) return clamp(1 - (d - seg.km)/SEG_BLEND, 0, 1);  // 段后：末→1，+0.15→0
+  if (d < 0)      return clamp(1 + d/B, 0, 1);             // 段前：-B→0，0→1
+  if (d > seg.km) return clamp(1 - (d - seg.km)/B, 0, 1);  // 段后：末→1，+B→0
   return 1;
 }
 function ownW(own, km){
@@ -3782,11 +4114,33 @@ function applyRoute(i){
    是在它算完之后叠一层**修正**。理由有两个：
      ① 动了它，450 项 mood 回归就全在盯着一个「六段各自的天时」，
         而那不是这套表该管的事；
-     ② 段的光要跟天气正交：下雨的林荫该是「暗」而不是「另一个雨天」。
+     ② 段的光是**修正**而不是替代：雨天照样是雨天的天时，
+        这张表只负责说「林荫比旁边暗一点」。
+   ⚠️ ②这里原先写成「段的光要跟天气正交：下雨的林荫该是暗」——
+     那是把错的当成了对的，还配了一条判据去守着它。
+     「树荫」这件事的前提是**有太阳**：树冠挡的是直射光束，
+     云层下面根本没有成束的光，也就谈不上挡不挡。
+     所以阴天（雨/雪/雾）在 applyMood 里就把 dir 的阴影关掉了：
+     林荫的 dir×0.66 只剩下「天穹被树冠挡掉一块」那点意思，
+     而**硬边树影**——那才是「树荫」真正读得出来的东西——一个都没有。
 
    每段只改四样，不碰天空贴图（每帧重画一张 canvas 贴图太贵）：
-     dir  —— 直射光倍率。林荫压到 0.42 是这里最大的一件：树冠把太阳挡掉大半，
+     dir  —— 直射光倍率。林荫压到 0.66 是这里最大的一件：树冠把太阳挡掉大半，
              不压这一项，「隧道」就只是两排树，看不出头顶有东西。
+             ⚠️ 0.66 不是顺手填的，是量出来的。过渡斜率 = 落差 ÷ 摊开的距离，
+             能动的只有落差和段长两个。2026-10-01 用户实骑说「晴天从有树荫到
+             没有树荫变得太突兀」，量出来进林荫 10 秒掉 29.3%/100 m，
+             而这条路上别处最陡的只有 6.3%。用户选了「把林荫调亮」这条
+             （另一条是加长林荫段，那要动路线节奏，是审美）。
+             逐档实测（进/出林荫的 %/100 m，上限 6.3%）：
+               0.42→29.3/26.6（原值）   0.50→24.4/21.4   0.58→20.2/17.0
+               0.66→16.5/13.3（选定）   0.74→13.2/10.0   0.82→10.3/7.1
+             选 0.66：跳变砍掉 44%，而林荫仍只有河堤的 6 成（0.69 vs 1.16），
+             隧道的暗感还在 —— 再往 0.74 以上，「隧道」就开始不像隧道了。
+             ⚠️ 单靠调亮到不了 6.3%：拉到 0.82 仍有 10.3%。剩下的差额要么
+             加长林荫段（要用户定），要么认可 16.5% 并重定上限 —— 重定时
+             上限必须是**冻住的常量**，不能回头拿被测集合里的最大值当上限
+             （那样上限会跟着被测对象一起漂，判据恒过）。
      hemi —— 半球光倍率。开阔的地方（河堤/长桥）天空贡献更多。
      warm/cool —— 色偏。镇子偏暖（墙是土黄 + 瓦），林荫偏冷偏绿。
      fogFar —— 雾的远端。开敞的长桥看得远，隧道里看得近。
@@ -3794,7 +4148,7 @@ function applyRoute(i){
 const SEGLIGHT = [
   { dir:1.04, hemi:1.02, warm:0.10, cool:0.00, fogFar:1.00, exp:1.00 },  // 村口
   { dir:1.10, hemi:1.08, warm:0.02, cool:0.07, fogFar:1.08, exp:1.03 },  // 河堤：水边开阔
-  { dir:0.42, hemi:0.90, warm:0.00, cool:0.12, fogFar:0.90, exp:0.94 },  // 林荫：头顶有东西
+  { dir:0.66, hemi:0.90, warm:0.00, cool:0.12, fogFar:0.90, exp:0.94 },  // 林荫：头顶有东西
   { dir:1.02, hemi:1.00, warm:0.06, cool:0.00, fogFar:1.02, exp:1.00 },  // 长坡
   { dir:0.86, hemi:1.05, warm:0.17, cool:0.00, fogFar:0.96, exp:1.00 },  // 镇子：土墙瓦顶
   { dir:1.08, hemi:1.10, warm:0.00, cool:0.04, fogFar:1.12, exp:1.04 }   // 长桥：最开阔
@@ -3809,7 +4163,7 @@ function applySegLight(km){
   const m = MOOD;
   let dK=0, hK=0, warm=0, cool=0, fK=0, eK=0, w=0;
   for (let i = 0; i < ROUTE.length; i++){
-    const a = segAmt(i, km), p = SEGLIGHT[i];
+    const a = segAmt(i, km, SEG_BLEND_LIGHT), p = SEGLIGHT[i];
     if (!p || a <= 0) continue;
     dK += p.dir*a;  hK += p.hemi*a;
     warm += p.warm*a; cool += p.cool*a;
@@ -3831,6 +4185,64 @@ function applySegLight(km){
     scene.fog.color.setHex(mixHex(mixHex(m.fog, 0xc2ddd2, cool), 0xe8d6b4, warm));
   }
   renderer.toneMappingExposure = m.exposure * eK;
+}
+
+/* ══════════════ 切换时的光过渡 ══════════════
+   2026-10-02 用户实看指出来的：「不是骑行中显得突兀，是**演示效果切换**的时候」。
+   量出来确实如此。dirShot() 里 S.km 一步跳到位、applySegLight 一步落档案值，
+   SEG_BLEND_LIGHT 那 0.25 km 渐变在切镜时**压根没参与** ——
+   镜2→3（河堤 1.2 km → 林荫 2.0 km，时段天气一个字没改）实测亮度**一帧掉 32%**，
+   眼睛看到的就是「灯啪一下暗了」。
+   ⚠️ 我先前用「每 100 m 变化率」去描述它，那量的是**匀速骑过段界**，
+      是另一个现象；切镜是**一帧之内**的跳变，根本没有「每 100 m」这回事。
+      判据问错了层面，后面查的方向就全偏了 —— 现象级判据要问画面最终呈现什么。
+
+   修法不是把段光调匀（那是骑行那一侧的事），是给切换本身加一段过渡。
+
+   ⚠️ 关键在于**别让目标值先被渲染出去一帧**：
+      dirShot / applyMood 都是同步把新值写进 dir、hemi、exposure 的，
+      而 dirShot 是在帧循环里调用的，后面紧接着就 render ——
+      所以新值一旦写进去，那一帧必然是跳的。
+      做法：先记住切换前显示的值（lightFadeIn），
+      切完之后立刻 lightFadeStep(0) 把光**按回去**（e=0，精确还原），
+      之后每帧再由 lightFadeStep(dt) 一步步推过去。
+      少了「按回去」这一步，第一版会先闪一下再倒退回来，比不还更难看。
+
+   渐入的量：亮度（dir + hemi）、曝光、三盏灯的颜色。
+   **不**渐入的：天空贴图、雾色、天气粒子、星星、路灯 ——
+   那些本来就该硬切（演示就是要给你看白天和夜晚的区别），
+   而且天空是一张现画的 canvas 贴图，淡它等于每帧重画两张再交叉。 */
+const FADE = {
+  on:false, armed:false, t:0, dur:0.9,
+  sd:0, sh:0, se:0, sc:new THREE.Color(), shc:new THREE.Color(), shg:new THREE.Color(),
+  gd:0, gh:0, ge:0, gc:new THREE.Color(), ghc:new THREE.Color(), ghg:new THREE.Color()
+};
+function lightFadeIn(){
+  FADE.sd = dir.intensity; FADE.sh = hemi.intensity; FADE.se = renderer.toneMappingExposure;
+  FADE.sc.copy(dir.color); FADE.shc.copy(hemi.color); FADE.shg.copy(hemi.groundColor);
+  FADE.t = 0; FADE.armed = false; FADE.on = true;
+}
+function lightFadeStep(dt){
+  if (!FADE.on) return;
+  /* 目标值必须**在第一帧就钉死**，不能每帧回头去读 dir.intensity ——
+     第一帧往目标挪了 0.1 之后，下一帧读到的「目标」已经是挪过的那一个了，
+     于是每帧都只走 0.1，永远停在起点。第一版就是这么写的：
+     判据直接量出「55 帧后亮度还是起点值，一帧都没动」。 */
+  if (!FADE.armed){
+    FADE.gd = dir.intensity; FADE.gh = hemi.intensity; FADE.ge = renderer.toneMappingExposure;
+    FADE.gc.copy(dir.color); FADE.ghc.copy(hemi.color); FADE.ghg.copy(hemi.groundColor);
+    FADE.armed = true;
+  }
+  FADE.t += dt;
+  const k = FADE.dur > 0 ? Math.min(1, FADE.t / FADE.dur) : 1;
+  const e = k*k*(3 - 2*k);                 // smoothstep：起点和终点的速度都是 0，不打滑
+  dir.intensity  = FADE.sd + (FADE.gd - FADE.sd) * e;
+  hemi.intensity = FADE.sh + (FADE.gh - FADE.sh) * e;
+  renderer.toneMappingExposure = FADE.se + (FADE.ge - FADE.se) * e;
+  dir.color.lerpColors(FADE.sc, FADE.gc, e);
+  hemi.color.lerpColors(FADE.shc, FADE.ghc, e);
+  hemi.groundColor.lerpColors(FADE.shg, FADE.ghg, e);
+  if (k >= 1) FADE.on = false;             // 走完就撒手，别每帧白算一遍
 }
 
 /* ── 铺地标层：压进雾里当远方 ──
@@ -4048,6 +4460,18 @@ function applyMood(tk, wk){
   renderer.toneMappingExposure = m.exposure;
   hemi.color.setHex(m.hemiSky); hemi.groundColor.setHex(m.hemiGround); hemi.intensity = m.hemiI;
   dir.color.setHex(m.dirCol); dir.intensity = m.dirI; dir.position.set(...m.dirPos);
+  /* 阴天（雨/雪/雾）**不该有硬阴影**。
+     2026-10-01 实骑发现的：「下雨怎么可能有树荫」—— 说得对。
+     根因不在六段那张光表，而在 WEATHER：rain/snow/fog 只给了 dirDim
+     0.70~0.85，直射光还剩一大半，只是暗了些，于是 44 棵隧道树照样在
+     柏油路上扫出一排硬边树影。物理上不对：云层下面没有成束的光，
+     也就没有束的边界；阴天的光是**整个天穹**散出来的，本来就均匀。
+     所以阴天把 dir 的阴影整个关掉 —— 路面于是均匀受光，
+     这才是阴天的样子。关掉之后路面会**变亮一点**（原先在树影里
+     的地方现在拿到了那份直射光），那正是「没有树荫」该有的结果，
+     不需要另外补亮度。 */
+  const overcast = (WEATHER[wk] && WEATHER[wk].k) || 0;
+  dir.castShadow = overcast < 0.5;
   stars.visible = m.stars;
   M.hill.color.setHex(m.hill); M.hillFar.color.setHex(m.hillFar);
   M.cloud.color.setHex(m.cloud); M.cloud.opacity = m.cloudOpacity;
@@ -4236,10 +4660,11 @@ const DIR = { on:false, i:0, t:0, putCinema:false };
    进段台词也就不会把这镜的说明盖掉。 */
 function dirShot(i){
   const s = SHOTS[i];
+  lightFadeIn();                 // 记住切换前**显示着**的光，下面要按着它推
   DIR.i = i; DIR.t = 0;
   S.km = s.km; S.seg = segAt(s.km);
   applyRoute(S.seg);
-  applyBands(S.km);
+  applyBands(s.km);
   applySegLight(s.km);
   if (MOOD.tk !== s.tk || MOOD.wk !== s.wk) applyMood(s.tk, s.wk);
   S.speed = s.spd; S.target = s.spd;
@@ -4250,6 +4675,7 @@ function dirShot(i){
   if (!s.cin && CIN.on && DIR.putCinema){ exitCinema(); DIR.putCinema = false; }
   $('cap').innerHTML = s.cap;
   S.capT = s.dur;
+  lightFadeStep(0);              // 把光按回切换前的样子，这一帧才不会闪
 }
 function dirStop(){
   DIR.on = false;
@@ -4323,8 +4749,10 @@ addEventListener('keydown', e => {
   if (e.code === 'Escape' && DIR.on) dirStop();
 });
 // 时段和天气各是一根独立的线：只动一根，另一根原样留着
-for (const k in TIMES)    $('t_'+k).addEventListener('click', () => applyMood(k, MOOD.wk));
-for (const k in WEATHER) $('w_'+k).addEventListener('click', () => applyMood(MOOD.tk, k));
+// ⚠️ 两条线都包一层过渡：白天→夜晚是 4 倍多的亮度差，硬切就是一下黑屏再一下亮屏。
+//   lightFadeStep(0) 那一行不能省 —— applyMood 是同步写值的，而点击之后马上要 render。
+for (const k in TIMES)    $('t_'+k).addEventListener('click', () => { lightFadeIn(); applyMood(k, MOOD.wk); lightFadeStep(0); });
+for (const k in WEATHER) $('w_'+k).addEventListener('click', () => { lightFadeIn(); applyMood(MOOD.tk, k); lightFadeStep(0); });
 
 /* sound: the AudioContext may only be built inside a real user gesture, so the
    first click/keypress anywhere on the page is what actually starts the engine.
@@ -5416,6 +5844,10 @@ function frame(){
     /* 段的光同样每帧跟 km 走，理由和上一行一样。排在 applyBands 后面：
        两者都读 km，谁都不该覆盖谁。 */
     applySegLight(S.km);
+    /* 切换时的光过渡。必须在 applySegLight **之后**：它读的是刚算出来的目标值，
+       自己往回退一点。放在前面就会被 applySegLight 整个覆盖掉，
+       而那种情况没有任何症状 —— 光就是不动，判据也照样绿。 */
+    lightFadeStep(dt);
     /* 导演模式：到点切下一镜。**必须每帧查**，不能靠 setTimeout ——
        标签页一进后台，setTimeout 会被浏览器压着不放，切镜就停了；
        而每帧查的话，页面回来第一帧就补上。 */

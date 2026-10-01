@@ -249,6 +249,56 @@ uok(afterDrag.lit.length === 0,
   el('bSpin').click();
 }
 
+/* ── 3c. 暂停期间能不能拖？拖了算不算数 ──
+   2026-10-02 用户问的。设计意图从 3b 就看出来了：「暂停要的是一张**完全静止**的画」，
+   所以插值被绑在 S.running 上，而**输入不绑** —— 你的拖动被记下来，恢复后兑现。
+   下面这两条把这个约定钉住，免得以后有人「顺手」给拖动也加上 S.running 的门，
+   那样暂停中拖动就变成彻底没反应了（比现在更难解释）。
+
+   ⚠️ 量法说明：这里**派真的 PointerEvent 到 cv 上**，不在判据里另抄一份
+      `azT -= dx*0.0072`。抄一份的话，产品那边把系数改了判据照样绿 ——
+      判据和实现两份代码各自漂，是比没有判据更坏的那种坏。 */
+{
+  const ev = (t, x, shift) => cv.dispatchEvent(new PointerEvent(t, {bubbles:true, clientX:x,
+                clientY:300, button: shift ? 2 : 0, buttons:1, pointerId:1, isPrimary:true,
+                shiftKey: !!shift}));
+  el('bPlay').click();                                   // 暂停
+  el('bFront').click();                                  // 机位归零，差异才量得出来
+  frame();
+  const o0 = { az: CAM.az, azT: CAM.azT, tx: CAM.target.x };
+  ev('pointerdown', 600, false);
+  CAM.dragging = true;                                   // 合成事件上 setPointerCapture 会抛，
+  ev('pointermove', 760, false);                         // try/catch 吞掉，dragging 得手动置上
+  frame(); frame();
+  const o1 = { az: CAM.az, azT: CAM.azT, tx: CAM.target.x };
+  uok(Math.abs(o1.azT - o0.azT) > 0.2,
+     '暂停中拖动**被记录**（azT 真的被拖偏了 —— 否则就是拖压根没接上）',
+     'azT ' + o0.azT.toFixed(3) + ' → ' + o1.azT.toFixed(3));
+  uok(o1.az === o0.az,
+     '暂停中拖动画面**一个比特都不动**（暂停 = 一张完全静止的画）',
+     'az ' + o0.az.toFixed(6) + ' → ' + o1.az.toFixed(6) + '，同一时刻 azT 已经挪了 ' +
+     (o1.azT - o0.azT).toFixed(3) + ' rad');
+  /* 平移是**另一条路**，约定可能不一样：camPan() 直接改 CAM.target，
+     而 camera.position.set() 每帧都读 CAM.target —— 那一句不在 if (S.running) 里。
+     所以环绕「拖了没反应」、平移「拖了立刻动」，同一个拖字两种反应。
+     这里把 CAM.target 的变化量出来：变了就说明平移这条路绕过了静止约定。 */
+  ev('pointerdown', 600, true);
+  ev('pointermove', 700, true);
+  const p1 = CAM.target.x;
+  uok(Math.abs(p1 - o1.tx) > 1e-6,
+     '平移（右键/双指）走的是另一条路：它直接改 CAM.target，**不受暂停约束**',
+     'CAM.target.x ' + o1.tx.toFixed(6) + ' → ' + p1.toFixed(6) +
+     '（暂停中）。而 camera.position.set() 每帧读它、不在 if (S.running) 里，' +
+     '所以这一种拖动在暂停时是**立刻生效**的 —— 和左键环绕的行为不一致');
+  CAM.dragging = false;
+  el('bPlay').click();                                   // 恢复
+  frame();
+  uok(CAM.az !== o1.az, '恢复之后才兑现刚才那个拖动（记下来的输入不算丢）',
+     'az ' + o1.az.toFixed(6) + ' → ' + CAM.az.toFixed(6) + '，暂停时你拖到的目标是 ' +
+     o1.azT.toFixed(3));
+  el('bSpin').click();
+}
+
 /* ═══ 电影模式：真点一次按钮 ═══
    这一段是被一次真事故逼出来的：按钮和 F 键都「进去 0.5 秒又出来」，
    而当时语法、自由变量、8 套 harness、CI 全绿 ——
@@ -452,7 +502,14 @@ uok(afterDrag.lit.length === 0,
 {
   const bx = new THREE.Box3();
   const bandOf = id => BANDS.find(B => B.id === id);
-  const OWNBANDS = ['tunnel','fence','reed','rail','boulder','house'];
+  /* 前六件（fence/reed/tunnel/boulder/house/rail）+ 后十二件招牌元素。
+     ⚠️ 跨路构件（B.over，比如村口的牌楼）**不在这个表里** ——
+        它本来就该骑在下面，用「离路中心多远」去量它等于量了个 0。
+        那几件由下一条专门量「净空 + 柱脚在不在路外」。 */
+  const OWNBANDS = ['tunnel','fence','reed','rail','boulder','house',
+                    'gate','well','sluice','netrack','litter','bench',
+                    'revet','summit','walker','plate','pylon','stele']
+                        .filter(id => !BANDS.find(B => B.id === id).over);
   /* 「这棵的冠往路那边伸出多远」—— ① 和反查 ⑩ 共用同一个出处。
      判据里另写一份实现，两份会各自漂：改坏这半边，判据照样全绿。 */
   const reachOf = o => { bx.setFromObject(o);
@@ -550,7 +607,100 @@ uok(afterDrag.lit.length === 0,
          '「' + id + '」的物件都站在路面之外（最近 ' + dmin.toFixed(2) + ' m > 半宽 ' + (ROAD_W/2).toFixed(2) + ' m）',
          id + ' 最近着地点离路中心 ' + dmin.toFixed(2) + ' m');
     }
-    R.push(['I', '—— 六条段专属带的离路距离 ——', worst.join('  ')]);
+    R.push(['I', '—— 段专属带的离路距离 ——', worst.join('  ')]);
+  }
+
+  /* ⑤ 路面正上方 RIDE_H 米以内必须是**空的** —— 骑过去撞得到的东西都在这里。
+        量的是**世界坐标下的每一个顶点**，不是 o.position，也不是 bbox。
+        这两个替代品都试过，各错一半：
+          · bbox：索塔的拉索是从塔顶斜下来横过路面的，bbox 是整个对角矩形，
+                  max.y 永远等于塔顶高度 —— 低的那一头藏在 bbox 里，看不见。
+          · o.position：牌楼的 o.position.z 正好是路中心，量出来是 0；
+                  索塔的 o.position 在路肩上，可它的拉索横过路面。
+        顶点法两边都对：斜的按真实形状算，跨路的按真实位置算。
+        ⚠️ 也正因为它够强，② 那句「离路中心多远」就不能照抄到跨路构件上：
+           牌楼本来就该骑在下面，离路中心 0 是**应该**有的值，不是缺陷。 */
+  {
+    const RIDE_H = 2.00;                   // m：骑手头顶约 1.8 m，留 0.2 余量
+    const ALLIDS = ['tunnel','fence','reed','rail','boulder','house',
+                    'gate','well','sluice','netrack','litter','bench',
+                    'revet','summit','walker','plate','pylon','stele'];
+    const v = new THREE.Vector3();
+    const hits = [];
+    let nverts = 0;
+    for (const id of ALLIDS){
+      const B = bandOf(id);
+      for (const o of B.objs) o.traverse(m => {
+        if (!m.isMesh || !m.geometry.attributes.position) return;
+        const pos = m.geometry.attributes.position;
+        m.updateMatrixWorld(true);
+        for (let i = 0; i < pos.count; i++){
+          nverts++;
+          v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+          if (v.y < RIDE_H && v.z > T_MIN && v.z < T_MAX){
+            hits.push(id + '@y' + v.y.toFixed(2) + '/z' + v.z.toFixed(2));
+            return;                        // 每个 mesh 只报一次，不然刷屏
+          }
+        }
+      });
+    }
+    uok(ALLIDS.every(id => bandOf(id).objs.length > 0) && nverts > 1000,
+       '顶点巡检真的跑起来了（' + nverts + ' 个顶点 / ' + ALLIDS.length + ' 条带，不是空转）',
+       'ALLIDS 里每一条带都得有物件，否则下面那条可能在只量一部分的情况下变绿');
+    uok(hits.length === 0,
+       '路面正上方 ' + RIDE_H.toFixed(2) + ' m 以内没有段专属构件（骑过去撞不到）',
+       hits.length ? (hits.length + ' 处压着路面：' + hits.slice(0,5).join(' '))
+                   : ALLIDS.length + ' 条带逐顶点量过；路面 z ∈ [' + T_MIN.toFixed(2) + ', ' + T_MAX.toFixed(2) + ']');
+  }
+
+  /* ⑤b 反查：把牌楼的两根柱子从 ±2.6 m 收到 ±1.2 m —— 柱子就都站进了
+        路面中间。⑤ 必须当场变红，而且要报出是哪一条带。
+        （只收柱子不收梁：收的是「脚」，净空那半边本来就该不变。） */
+  {
+    const B = bandOf('gate');
+    const posts = [];
+    B.objs.forEach(o => o.traverse(m => { if (m.isMesh && m.geometry.type === 'BoxGeometry'
+        && Math.abs(m.geometry.parameters.width - 0.42) < 1e-6) posts.push(m); }));
+    const keep = posts.map(m => m.position.z);
+    posts.forEach((m, i) => { m.position.z = (i % 2 ? 1 : -1) * 1.2; m.updateMatrixWorld(true); });
+    const inRoad = posts.filter(m => { bx.setFromObject(m); return bx.max.z > T_MIN && bx.min.z < T_MAX; }).length;
+    posts.forEach((m, i) => { m.position.z = keep[i]; m.updateMatrixWorld(true); });
+    uok(posts.length > 0 && inRoad === posts.length,
+       '反查 ⑤：把牌楼的柱子收到路中间 → 判据立刻抓到（' + inRoad + '/' + posts.length + ' 根站进了路面）',
+       '只判 o.position.z 的写法在这里量到的是 0（牌楼本来就在路中心），' +
+       '而 0 在跨路构件上是应该有的值 —— 拿它当保护等于没有保护');
+    const back = posts.filter(m => { bx.setFromObject(m); return bx.max.z < T_MIN || bx.min.z > T_MAX; }).length;
+    uok(back === posts.length, '反查 ⑤ 收尾：柱子放回 ' + back + '/' + posts.length + ' 根都回到路面外',
+       '还原之后 ⑤ 又绿了（上一条不是靠改参数红的）');
+  }
+
+  /* ⑥ 「带子里有物件」**不等于**「玩家看得见」。
+        applyBands 每帧按权重算 visible，权重算成 0 时整条带子集体隐身 ——
+        而 objs.length > 0 照样成立，②③④⑤ 全部照绿，一个红都不会有。
+        招牌元素是这一轮新加的十二件，权重表也新加了十二个键，
+        正好是最容易「开关忘了接上」的地方。所以这里直接问
+        **在本段中点、权重算完之后，还有几件是 visible 的**。
+        ⚠️ 问完必须把 visible 还原（调回 applyBands(S.km)），
+           否则后面所有判据看到的都是「停在上一段中点」的世界。 */
+  {
+    const NEW12 = ['gate','well','sluice','netrack','litter','bench',
+                   'revet','summit','walker','plate','pylon','stele'];
+    const rep = [];
+    for (const id of NEW12){
+      const B = bandOf(id);
+      let seg = -1;
+      for (let i = 0; i < ROUTE.length; i++) if (ROUTE[i][id]) seg = i;
+      if (seg < 0){ rep.push(id + ':无段'); continue; }
+      applyBands(ROUTE[seg].at + ROUTE[seg].km*0.5);
+      const vis = B.objs.filter(o => o.visible).length;
+      rep.push(id + ':' + vis + '/' + B.objs.length);
+      uok(seg >= 0 && vis > 0,
+         '「' + id + '」在「' + ROUTE[seg].name + '」段中点真的看得见（' + vis + '/' + B.objs.length + ' 件）',
+         'ownW(' + id + ') 在该段中点 = ' + ownW(id, ROUTE[seg].at + ROUTE[seg].km*0.5).toFixed(2) +
+         '；算成 0 的话整条带子集体隐身，而 objs.length 仍然是 ' + B.objs.length);
+    }
+    applyBands(S.km);                     // 还原，别把世界停在别人的段里
+    R.push(['J', '—— 12 件招牌元素在本段的可见数 ——', rep.join('  ')]);
   }
 
   /* ③ 护栏的横杆长度必须等于**组间距**，两段才接得上、看不出缝。
@@ -575,8 +725,8 @@ uok(afterDrag.lit.length === 0,
       const B = bandOf(id);
       for (const o of B.objs) if (Math.abs(o.position.y) > 1e-6) badY.push(id + '@' + o.position.y.toFixed(2));
     }
-    uok(badY.length === 0, '六条段专属带的物件都落在地面上（position.y = 0）',
-       badY.length ? ('浮空/入土 ' + badY.length + ' 处：' + badY.slice(0,5).join(' ')) : '44+26+44+22+18+18 件全在 y=0');
+    uok(badY.length === 0, '段专属带的物件都落在地面上（position.y = 0，含 12 件招牌元素）',
+       badY.length ? ('浮空/入土 ' + badY.length + ' 处：' + badY.slice(0,5).join(' ')) : '17 条带全在 y=0');
   }
 
   /* ⑤ ?km= 深链。**分两种加载**：带参数时必须真的落在那一公里，
@@ -658,25 +808,229 @@ uok(afterDrag.lit.length === 0,
       prev = v;
     }
     uok(mono, '跨段界光连续，没有跳档：' + tr.join(' '),
-       '段界 ' + b.toFixed(2) + ' km，d 从 -0.15 到 +0.15');
+       '段界 ' + b.toFixed(2) + ' km，d 从 -' + SEG_BLEND + ' 到 +' + SEG_BLEND);
   }
 
-  /* ④ 与天气/时段**正交**：下雨的林荫该是「暗的雨天」，不是「另一个雨天」；
-        切到夜晚，六段的相对关系必须照样成立。这一条最容易被「直接改
-        composeMood 的表」的实现破坏 —— 那种做法会让 450 项 mood 回归集体变红，
-        而那说明它改错了地方。 */
+  /* ③b 「连续」和「不突兀」是两件事。
+        上一条只保证没有**跳档**（单步是连续的），可 2 倍多的亮度变化摊在
+        500 m 上，在 36 km/h 下是 50 秒走完 —— 眼睛对亮度的**变化率**
+        敏感，函数连续也照样能被看出「灯啪一下亮了」。
+        2026-10-01 用户实骑提的就是这个：「晴天从有树荫到没有树荫太突兀」。
+
+        量的量是 **dir + hemi**，不是只看 dir：眼睛感到的亮度是这两盏灯
+        一起给的，只看直射会把林荫的变化夸大（0.42 vs 1.10 是 2.6 倍，
+        而 dir+hemi 只有 1.9 倍 —— 半球光在林荫只压了 10%，补回来不少）。
+
+        门槛不是拍脑袋的：**用户没 complaint 的那些过渡里最陡的那一个**
+        （镇子→长桥）就是上限。超过它的才叫「突兀」，
+        而这一条的作用是防止以后有人把任何一段调出新的陡坎。
+        ⚠️ 量完把真实数写进 detail —— 免得下次只看到 PASS
+           就以为这条是凑出来的。 */
   {
-    applyMood('day', 'rain');
+    const STEP = 0.025;                                // km = 25 m
+    const lum = () => dir.intensity + hemi.intensity;  // 眼睛感到的亮度
+    const rows = [];
+    for (let i = 0; i < ROUTE.length; i++){
+      const j = (i+1) % ROUTE.length;
+      const edge = ROUTE[i].at + ROUTE[i].km;
+      let mx = 0, prev = null;
+      for (let d = -SEG_BLEND_LIGHT; d <= SEG_BLEND_LIGHT + 1e-9; d += STEP){
+        applySegLight(edge + d);
+        const v = lum();
+        if (prev !== null && prev > 1e-6) mx = Math.max(mx, Math.abs(v - prev)/prev);
+        prev = v;
+      }
+      rows.push({ nm: ROUTE[i].name + '→' + ROUTE[j].name, v: mx * (100/(STEP*1000)) });
+    }
+    const show = list => list.map(r => r.nm + ' ' + (r.v*100).toFixed(1) + '%').join('  ');
+    R.push(['K', '—— 段界亮度变化率（每 100 m）——', show(rows)]);
+
+    /* ⚠️⚠️ 这里踩过两次「拿自己量自己」，两次都是绿的，两次都看不出来：
+       第一版排除林荫用子串 `-林荫|林荫-`，**没排掉** ——
+         过渡名是 `河堤→林荫`，箭头不是破折号，两边都匹配不上，
+         于是「最陡的」拿林荫自己当上限。
+       第二版改成 `split('→')` 排对了，**但单位不一致**：
+         `worst` 是比例（0.293），上限是从显示字符串里
+         `parseFloat('6.3%')` 拿回来的**百分数**（6.3），
+         于是判据实际在比 `0.293 <= 6.3` —— 永远成立。
+         而 detail 里两个数都印成百分数（29.3% / 6.3%），
+         一眼看去「29.3 大于 6.3 却 PASS」只会显得像阈值写松了。
+       两条教训都落进了代码结构里，不再靠「记得别写错」：
+       ① `rows` 存的是 `{nm, v: 数字}`，**只有打印时才转百分数** ——
+          判据比的就是它自己印出来的那个数，不可能再错开。
+       ② 上限是**冻住的常量**，不是从被测集合里现算的最大值 ——
+          现算的话，上限会跟着被测对象一起漂，永远差一口。
+       判据里凡是「排除某一项」，拿**结构**去排（拆开比名字），不拿子串凑。 */
+    const SLOPE_CAP = 0.063;   // 6.3%/100 m，来源见下面注释
+    /* 6.3% 的来历（不是拍脑袋）：2026-10-01 用户实骑只 complaint 了林荫
+       那一进一出，别的四段过渡都骑过去了没提 —— 那四段里最陡的实测值
+       （镇子→长桥）就是「不突兀」的定义。冻成常量而不是每次重算，
+       是为了让「以后谁调出新的陡坎」真的能变红。 */
+    const hasShade = r => r.nm.split('→').includes('林荫');
+    const others = rows.filter(r => !hasShade(r));
+    const shade  = rows.filter(hasShade);
+    const TOL = 5e-4;   // 0.05 个百分点，够吸收打印时的四舍五入
+
+    uok(rows.length === 6 && others.length === 4 && shade.length === 2,
+       '六个过渡都量到了，并按「有没有林荫」分成 4 + 2 两组（分组本身是下面两条的前提）',
+       '不含林荫：' + others.map(r => r.nm).join(' ') + '｜含林荫：' + shade.map(r => r.nm).join(' '));
+
+    const wo = others.reduce((a, r) => Math.max(a, r.v), 0);
+    uok(wo <= SLOPE_CAP + TOL,
+       '不含林荫的四段过渡都不陡（上限 6.3%/100 m，冻住的常量）',
+       '最陡 ' + (wo*100).toFixed(1) + '%/100 m。36 km/h 下 100 m = 10 秒。逐段：' + show(rows));
+
+    const ws = shade.reduce((a, r) => Math.max(a, r.v), 0);
+    const wsAt = shade.filter(r => r.v === ws).map(r => r.nm).join(' ');
+    /* ⚠️ 这条的**理由在 2026-10-02 换过一次**，写在这儿免得下次又照着旧理由读它。
+       原话是「这正是用户实骑提的那一条」—— **不对**。用户明确说了：突兀来自
+       **演示切镜**，不是骑行；骑行那一侧由 ③c 量的「一帧跳多少」负责。
+       判据挂着一已被证伪的理由，比没有判据更坏 —— 它让数字显得像有意为之。
+       所以现在这条只做一件事：**防回退**，调亮之后不许再变陡。
+       上限 16.5% 是「调亮这次改动的成果值」，**冻住的常量**，
+       不是从被测集合里现算的最大值（那样上限会跟着被测对象一起漂，恒过）。
+       ⚠️ 这个常量的依据比原来那个弱：原来是「用户骑过没意见」，
+          现在是「用户还没骑过」。要更强的依据得等用户实骑一次。 */
+    const SHADE_CAP = 0.165;
+    uok(ws <= SHADE_CAP + TOL,
+       '林荫那一进一出：调亮之后不许再变陡（防回退，不是「不突兀」）',
+       '最陡 ' + (ws*100).toFixed(1) + '%/100 m，发生在 ' + wsAt +
+       '。上限 16.5% = 调亮（SEGLIGHT[2].dir 0.42→0.66）之后的成果值，实测砍掉 44%。' +
+       '调亮这条路到头了：0.82 仍有 10.3%，而那时隧道已不像隧道。' +
+       '⚠️ 用户尚未实骑确认这个值。参考：不含林荫的四段最陡 6.3%。');
+
+    /* 反查 ⑪：上面那条是绿的，所以得证明它不是恒过。
+       把上限砍一半 → 「四段都不陡」必须翻 false。
+       （上一版正是恒过的：0.293 和 6.3 跨单位比，砍半也抓不到。） */
+    {
+      const half = SLOPE_CAP / 2;
+      const caught = others.filter(r => r.v > half + TOL);
+      uok(caught.length > 0,
+         '反查 ⑪：上限砍半后「四段都不陡」立刻翻 false（证明它不是恒过）',
+         '砍半后上限 ' + (half*100).toFixed(2) + '%/100 m，被抓到：' +
+         (caught.length ? show(caught) : '（一条都没抓到 —— 那这条判据就是空的）'));
+    }
+  }
+
+  /* ③c 切换时（演示切镜 / 换时段 / 换天气）光不许跳。
+     2026-10-02 用户实看指出来的：「不是骑行中显得突兀，是演示效果切换的时候」。
+     量出来确实如此：镜2→3 河堤 1.2 km → 林荫 2.0 km，时段天气一字未改，
+     亮度**一帧掉 32%**；SEG_BLEND_LIGHT 那 0.25 km 渐变在切镜时压根没参与。
+     ⚠️ 我先前用「每 100 m 变化率」去描述它 —— 那量的是**匀速骑过段界**，
+        是另一个现象。切镜是**一帧之内**的跳变，根本没有「每 100 m」这回事。
+        判据问错了层面，后面的排查方向就整体偏了：照着斜率去调段光，
+        而斜率再小也管不到那一帧。所以「这里问的是什么」写死在下面。
+
+     这里测的是过渡**原语本身**，故意不去调 dirShot ——
+     dirShot 会顺手改 S / CAM / MOOD / 场景内容，漏还原一项，
+     后面几条判据量的就不是同一个世界了（而那种错误不会报错，只会静悄悄地偏）。
+     「dirShot 到底有没有接上」交给最后那条源码断言。 */
+  {
+    const cf = o => ({ on:o.on, armed:o.armed, t:o.t, dur:o.dur,
+                       sd:o.sd, sh:o.sh, se:o.se, gd:o.gd, gh:o.gh, ge:o.ge,
+                       sc:o.sc.clone(), shc:o.shc.clone(), shg:o.shg.clone(),
+                       gc:o.gc.clone(), ghc:o.ghc.clone(), ghg:o.ghg.clone() });
+    const sv = { d: dir.intensity, h: hemi.intensity, e: renderer.toneMappingExposure,
+                 dc: dir.color.clone(), hc: hemi.color.clone(), hg: hemi.groundColor.clone(),
+                 f: cf(FADE) };
+    const restore = () => {
+      dir.intensity = sv.d; hemi.intensity = sv.h; renderer.toneMappingExposure = sv.e;
+      dir.color.copy(sv.dc); hemi.color.copy(sv.hc); hemi.groundColor.copy(sv.hg);
+      const f = sv.f;
+      FADE.on = f.on; FADE.armed = f.armed; FADE.t = f.t; FADE.dur = f.dur;
+      FADE.sd = f.sd; FADE.sh = f.sh; FADE.se = f.se;
+      FADE.gd = f.gd; FADE.gh = f.gh; FADE.ge = f.ge;
+      FADE.sc.copy(f.sc); FADE.shc.copy(f.shc); FADE.shg.copy(f.shg);
+      FADE.gc.copy(f.gc); FADE.ghc.copy(f.ghc); FADE.ghg.copy(f.ghg);
+    };
+    /* 一次完整的过渡：切换前显示 2.0，切换那一刻写 4.0，
+       然后按 1/60 一步走完。量「切完当帧显示什么」和「单帧最多变多少」。
+       FADE 的内部状态一并带出来 —— 上一版就是「55 帧一动不动」，
+       光看亮度看不出是 on 被关了还是 dur 读错了。 */
+    const runFade = (dur, doRestore) => {
+      FADE.dur = dur; FADE.t = 0; FADE.armed = false; FADE.on = true;
+      FADE.sd = 1.0; FADE.sh = 1.0; FADE.se = 1.0;
+      FADE.sc.setHex(0xffffff); FADE.shc.setHex(0xffffff); FADE.shg.setHex(0x808080);
+      dir.color.setHex(0xffffff); hemi.color.setHex(0xffffff); hemi.groundColor.setHex(0x808080);
+      dir.intensity = 2.2; hemi.intensity = 1.8; renderer.toneMappingExposure = 0.94;
+      if (doRestore) lightFadeStep(0);
+      const atCut = dir.intensity + hemi.intensity;
+      let mx = 0, prev = atCut, n = 0;
+      for (let t = 0; t < dur + 1/60; t += 1/60){
+        lightFadeStep(1/60); n++;
+        const v = dir.intensity + hemi.intensity;
+        if (prev > 1e-6) mx = Math.max(mx, Math.abs(v - prev)/prev);
+        prev = v;
+      }
+      return { atCut, mx, n, end: dir.intensity + hemi.intensity,
+               endE: renderer.toneMappingExposure,
+               on: FADE.on, armed: FADE.armed, tt: FADE.t, dd: FADE.dur, gd: FADE.gd };
+    };
+    const ok        = runFade(0.9,  true);    // 现状
+    const noRestore = runFade(0.9,  false);   // 反查：忘了「按回去」那一步
+    const tooFast   = runFade(0.02, true);    // 反查：过渡被压成一眨眼
+    restore();
+
+    uok(Math.abs(ok.atCut - 2.0) < 1e-9,
+       '切完那一帧显示的还是切换前的光（不然就是「先闪一下再倒回来」）',
+       '切完当帧 ' + ok.atCut.toFixed(3) + '（应 2.000）。省掉 lightFadeStep(0) 的话这里是 ' +
+       noRestore.atCut.toFixed(3) + ' —— 一帧到位，正是用户看到的那一下');
+    uok(Math.abs(ok.end - 4.0) < 1e-6 && Math.abs(ok.endE - 0.94) < 1e-6,
+       '过渡走完要**精确落在**目标上，不是停在半路',
+       ok.n + ' 帧后亮度 ' + ok.end.toFixed(3) + '（目标 4.000）、曝光 ' + ok.endE.toFixed(3) +
+       '（目标 0.940）。走完 FADE.on=' + ok.on + ' armed=' + ok.armed +
+       ' t=' + ok.tt.toFixed(3) + ' dur=' + ok.dd + ' 钉住的目标 dir=' + ok.gd.toFixed(3));
+    uok(ok.mx <= 0.05,
+       '过渡期间每帧的亮度变化 ≤ 5%（0.9 s 把整个落差摊掉）',
+       '单帧最大 ' + (ok.mx*100).toFixed(1) + '%，共 ' + ok.n + ' 帧。' +
+       '不做过渡 = 100%（一帧到位）；把时长压到 0.02 s = ' + (tooFast.mx*100).toFixed(0) + '%');
+    uok(dirShot.toString().indexOf('lightFadeIn') >= 0 && dirShot.toString().indexOf('lightFadeStep') >= 0
+       && frame.toString().indexOf('lightFadeStep') >= 0,
+       '这套过渡真的接在切镜和帧循环上（不然上面测的是一个没人调用的原语）',
+       'dirShot：' + (dirShot.toString().indexOf('lightFadeIn')  >= 0 ? '有' : '没有') + ' lightFadeIn、' +
+                 (dirShot.toString().indexOf('lightFadeStep') >= 0 ? '有' : '没有') + ' lightFadeStep(0)；' +
+       'frame：'  + (frame.toString().indexOf('lightFadeStep')   >= 0 ? '有' : '没有') + ' lightFadeStep(dt)');
+  }
+
+  /* ④ 阴天**不该有树荫**。
+        2026-10-01 用户实骑指出来的：「下雨怎么可能有树荫」—— 对，
+        云层下面没有成束的光，也就没有束的边界，不该有硬边树影扫过路面。
+        ⚠️ 我原先在这里守的是**反过来的**东西：「下雨天林荫照样比河堤暗，
+           段的光是叠在天气之上的」—— 那等于把「下雨有树荫」写成了要求，
+           还给它配了一条判据守着。判据守着错的东西，比没有判据更坏：
+           它让错误显得像是有意为之。
+        所以这里改成问画面本身：**阴天时直射光不投影**。
+        「林荫比别处暗一点」是另一回事（天穹被树冠挡了一块，任何天气下
+        都成立），那件事仍由 SEGLIGHT 负责，两件事别混成一件。 */
+  {
+    const shadows = [];
+    for (const wk of ['clear','rain','snow','fog']){
+      applyMood('day', wk);
+      applySegLight(center[ROUTE.findIndex(s=>s.name==='林荫')]);
+      shadows.push(wk + '=' + dir.castShadow);
+    }
+    uok(dir.castShadow === false,
+       '阴天（刚切到雾）直射光不投影 —— 路面均匀受光，没有硬边树荫',
+       '四种天气的 dir.castShadow：' + shadows.join('  '));
+    uok(WEATHER.clear.k === 0 && WEATHER.rain.k > 0 && WEATHER.snow.k > 0 && WEATHER.fog.k > 0,
+       '只有晴天才开阴影（这条判据的前提本身也得成立）',
+       'WEATHER 的 k：clear=' + WEATHER.clear.k + ' rain=' + WEATHER.rain.k +
+       ' snow=' + WEATHER.snow.k + ' fog=' + WEATHER.fog.k);
+    applyMood('day', 'clear');
+    uok(dir.castShadow === true, '切回晴天，投影要回来（上一条不是恒真的）',
+       'clear 时 dir.castShadow = ' + dir.castShadow + '，林荫那 44 棵树的硬边影回来了');
+    /* 阴天仍然可以比旁边暗，但那是「天穹被树冠挡了一块」，
+       不是「有影子」。幅度上不该再有晴天那么狠 —— 所以只要求弱于晴天。 */
     const R = [];
     for (const km of center){ applySegLight(km); R.push(dir.intensity); }
-    uok(R[ROUTE.findIndex(s=>s.name==='林荫')] < R[ROUTE.findIndex(s=>s.name==='河堤')] * 0.75,
-       '下雨天林荫照样比河堤暗（段的光是叠在天气之上的，不是替代天气）',
+    uok(R[ROUTE.findIndex(s=>s.name==='林荫')] < R[ROUTE.findIndex(s=>s.name==='河堤')],
+       '阴天林荫仍比河堤暗一点（天穹被树冠挡住一块，这一条与天气无关）',
        R.map((v,i) => ROUTE[i].name + ':' + v.toFixed(2)).join(' '));
     applyMood('night', 'clear');
     const N = [];
     for (const km of center){ applySegLight(km); N.push(dir.intensity); }
     uok(N[ROUTE.findIndex(s=>s.name==='林荫')] < N[ROUTE.findIndex(s=>s.name==='河堤')] * 0.75,
-       '夜晚林荫照样比河堤暗（八段关系与时段无关）',
+       '夜晚林荫照样比河堤暗（段光关系与时段无关）',
        N.map((v,i) => ROUTE[i].name + ':' + v.toFixed(2)).join(' '));
     applyMood('day', 'clear');
   }
@@ -813,15 +1167,19 @@ uok(afterDrag.lit.length === 0,
 }
 
 /* ── 输出 ── */
-const bad = R.filter(x => !x[0] && x[0] !== 'I');
-let h = '<h3>' + (R.filter(x => x[0] === true).length) + ' / ' + R.filter(x => x[0] !== 'I').length + ' 通过</h3>';
+/* 计数一律靠 `typeof x[0] === 'boolean'` 认「这是一条断言」，
+   不靠标记字母 —— 摘要行标 'I' 还是 'J' 都一样，
+   而标错字母的后果是页面报出「PASS 147/148」这种自相矛盾的标题。 */
+const isU = x => typeof x[0] === 'boolean';
+const bad = R.filter(x => isU(x) && !x[0]);
+let h = '<h3>' + (R.filter(x => isU(x) && x[0]).length) + ' / ' + R.filter(isU).length + ' 通过</h3>';
 if (bad.length){
   h += '<div style="color:#ff6b6b;margin:6px 0 10px">下面 ' + bad.length + ' 条没过：</div>';
   for (const [c,n,d] of bad) h += '<div class="bad">FAIL  ' + n + (d ? '   [' + d + ']' : '') + '</div>';
   h += '<hr>';
 }
 for (const [c,n,d] of R){
-  if (c === 'I') { h += '<div class="info" style="color:#8a97a9;margin:8px 0 2px">' + n + '</div>'
+  if (!isU([c])) { h += '<div class="info" style="color:#8a97a9;margin:8px 0 2px">' + n + '</div>'
                       + '<pre style="white-space:pre-wrap;color:#8a97a9;font-size:11px">' + d + '</pre>'; continue; }
   h += '<div class="' + (c ? 'ok' : 'bad') + '">' + (c ? 'PASS  ' : 'FAIL  ') + n + (d ? '   [' + d + ']' : '') + '</div>';
 }
@@ -831,8 +1189,8 @@ if (!box){ box = document.createElement('pre'); box.id = 'uicheck';
                      + 'background:#0b0e13;color:#e9eef6;font:12px/1.5 Consolas,monospace;white-space:pre-wrap';
   document.body.appendChild(box); }
 box.innerHTML = h;
-document.title = (bad.length ? 'FAIL ' : 'PASS ') + R.filter(x=>x[0]===true).length
-               + '/' + R.filter(x => x[0] !== 'I').length;
+document.title = (bad.length ? 'FAIL ' : 'PASS ') + R.filter(x => isU(x) && x[0]).length
+               + '/' + R.filter(isU).length;
 })();
 '@
 

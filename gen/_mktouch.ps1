@@ -524,8 +524,12 @@ ok(cssNoMedia !== cssText && cssNoMedia.length < cssText.length,
 }
 
 /* ── 输出 ── */
-const bad = R.filter(x => !x[0] && x[0] !== 'I');
-const passN = R.filter(x => x[0] === true).length, totalN = R.filter(x => x[0] !== 'I').length;
+/* 计数靠 `typeof x[0] === 'boolean'` 认「这是一条断言」，不靠标记字母。
+   和 _mkuistate 同一个坑：摘要行一旦标了 'I' 以外的字母，就会被算进分母
+   却永远进不了分子，标题报出「PASS n/(n+1)」这种自相矛盾的东西。 */
+const isU = x => typeof x[0] === 'boolean';
+const bad = R.filter(x => isU(x) && !x[0]);
+const passN = R.filter(x => isU(x) && x[0]).length, totalN = R.filter(isU).length;
 let h = '<h3>' + passN + ' / ' + totalN + ' 通过</h3>';
 if (bad.length){
   h += '<div style="color:#ff6b6b;margin:6px 0 10px">下面 ' + bad.length + ' 条没过：</div>';
@@ -558,8 +562,8 @@ document.title = (bad.length ? 'FAIL ' : 'PASS ') + passN + '/' + totalN;
   }
   b.textContent = '体检体抛异常，这一轮结果**不完整**（不是「还在跑」）：\n\n'
                 + (e && e.stack ? e.stack : String(e))
-                + '\n\n—— 崩之前已经跑完的 ' + R.filter(x => x[0] !== 'I').length + ' 条 ——\n'
-                + R.map(x => (x[0] === 'I' ? 'INFO' : (x[0] ? 'PASS' : 'FAIL')) + '  ' + x[1]).join('\n');
+                + '\n\n—— 崩之前已经跑完的 ' + R.filter(isU).length + ' 条 ——\n'
+                + R.map(x => (!isU(x) ? 'INFO' : (x[0] ? 'PASS' : 'FAIL')) + '  ' + x[1]).join('\n');
 });
 '@
 
