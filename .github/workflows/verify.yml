@@ -1,0 +1,181 @@
+name: verify
+
+# Runs the full 20-step checkall on a Windows runner with Windows PowerShell 5.1,
+# i.e. byte-for-byte the same interpreter this repository is developed against.
+#
+# WHY THIS FILE IS ASCII-ONLY:
+# the step bodies below are written to disk by the runner and then executed by
+# Windows PowerShell 5.1. Chinese text in a `run:` block survives only if the
+# runner happens to emit a BOM, and that is not something this machine can test
+# (see AGENTS.md: every unverified assumption is one that bites later). So the
+# `run:` blocks stay pure ASCII; the reasoning lives in README.md / AGENTS.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── 1. mavis-trash shim ────────────────────────────────────────────
+      # 8 places in this repository shell out to the local `mavis-trash`
+      # (recoverable delete) to clear their scratch directories. That tool is
+      # part of the desktop app, so it does not exist on a runner.
+      #
+      # The shim reproduces the real tool's *interface* exactly, which is what
+      # the callers depend on:
+      #   - strips rm-style flags (-r -f -rf -fr --recursive --force -R --)
+      #   - no targets at all -> message on stderr, exit 1
+      #   - a target that is not there -> message on stderr, exit 1
+      #   - any target that fails -> exit 1 (partial success is still failure)
+      #   - everything removed -> one line per file on stdout, exit 0
+      #
+      # The only difference is *where* things go: the real tool moves to the
+      # Recycle Bin, the shim deletes outright, because a runner has no
+      # Recycle Bin and nothing to recover to.
+      #
+      # A no-op shim would be the worst possible outcome: every caller would
+      # exit 0 while deleting nothing, the `New-Item -Force` that follows would
+      # keep the stale directory, and the "clean -> rebuild" code path would
+      # silently never execute on the one machine that exists to execute it.
+      # Step 2 exists precisely to make that failure loud.
+      - name: 01 mavis-trash shim
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $shim = Join-Path $env:RUNNER_TEMP 'mavis-trash-shim'
+          New-Item -ItemType Directory -Path $shim -Force | Out-Null
+
+          $shimPs1 = @'
+          # CI stand-in for the local `mavis-trash` tool. See verify.yml for why.
+          param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Paths)
+
+          $ErrorActionPreference = 'Continue'
+
+          # Same flag set the real tool strips.
+          $rmFlags = @('-r', '-f', '-rf', '-fr', '--recursive', '--force', '-R', '--')
+          $files = @($Paths | Where-Object { $rmFlags -notcontains $_ })
+
+          if ($files.Count -eq 0) {
+            [Console]::Error.WriteLine('mavis-trash: no files specified')
+            exit 1
+          }
+
+          $code = 0
+          foreach ($f in $files) {
+            $full = $null
+            try { $full = [IO.Path]::GetFullPath($f) } catch { $full = $null }
+            if (-not $full -or -not (Test-Path -LiteralPath $full)) {
+              [Console]::Error.WriteLine("mavis-trash: '$f': No such file or directory")
+              $code = 1
+              continue
+            }
+            try {
+              Add-Type -AssemblyName Microsoft.VisualBasic
+              $item = Get-Item -LiteralPath $full -Force
+              if ($item.PSIsContainer) {
+                [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory(
+                  $full, 'OnlyErrorDialogs', 'DeletePermanently')
+              } else {
+                [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
+                  $full, 'OnlyErrorDialogs', 'DeletePermanently')
+              }
+              [Console]::Out.WriteLine("mavis-trash: removed: '$f'")
+            } catch {
+              [Console]::Error.WriteLine("mavis-trash: failed to remove '$f': $($_.Exception.Message)")
+              $code = 1
+            }
+          }
+          exit $code
+          '@
+
+          # -Encoding UTF8 under Windows PowerShell 5.1 emits a BOM, which is
+          # what makes the .ps1 readable. Do not switch to pwsh here: in
+          # PowerShell 7 -Encoding UTF8 means "no BOM".
+          [IO.File]::WriteAllText((Join-Path $shim 'mavis-trash-shim.ps1'), $shimPs1, (New-Object Text.UTF8Encoding($true)))
+
+          $cmd = "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"%~dp0mavis-trash-shim.ps1`" %*`r`nexit /b %ERRORLEVEL%"
+          [IO.File]::WriteAllText((Join-Path $shim 'mavis-trash.cmd'), $cmd, (New-Object Text.ASCIIEncoding))
+
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $shim
+          Write-Host ("shim installed in " + $shim)
+
+      # ── 2. prove the shim really deletes ───────────────────────────────
+      # Four assertions, because each of the three failure shapes is a way a
+      # shim can rot into "succeeds while doing nothing":
+      #   a) a real file is gone afterwards
+      #   b) a real directory (with content) is gone afterwards
+      #   c) a missing target is an ERROR, not a silent success
+      #   d) rm-style flags are stripped instead of being treated as filenames
+      # Without this step, "exit 0" from checkall would be indistinguishable
+      # from "the shim never ran".
+      #
+      # ⚠️ $ErrorActionPreference is 'Continue' here, deliberately, and this is
+      #    the exact trap that made tools/_deploy.ps1 exit 1 after a successful
+      #    push (see AGENTS.md): under 'Stop', Windows PowerShell 5.1 turns a
+      #    native command writing to **stderr** into a TERMINATING error, and
+      #    `2>$null` does NOT reliably suppress that. Assertion (c) calls the
+      #    shim on a path that does not exist, so the shim writes to stderr on
+      #    purpose — with 'Stop' this step would die on its own error path and
+      #    the real verdict ($LASTEXITCODE) would never be read. The verdict
+      #    that matters is the exit code, so read that and keep going.
+      - name: 02 prove the shim actually deletes
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $fail = 0
+          function Chk($name, $cond, $detail) {
+            if ($cond) { Write-Host ('  PASS  ' + $name) }
+            else { $script:fail++; Write-Host ('  FAIL  ' + $name + '  ' + $detail) }
+          }
+          $probe = Join-Path $env:RUNNER_TEMP 'shimselfcheck'
+          New-Item -ItemType Directory -Path $probe -Force | Out-Null
+          $f = Join-Path $probe 'one.txt'
+          $d = Join-Path $probe 'sub'
+          [IO.File]::WriteAllText($f, 'x')
+          $null = New-Item -ItemType Directory -Path $d -Force
+          [IO.File]::WriteAllText((Join-Path $d 'two.txt'), 'y')
+
+          mavis-trash $f 2>$null | Out-Null
+          Chk 'a real file is deleted' (-not (Test-Path -LiteralPath $f)) $f
+          Chk 'a2 it reported success' ($LASTEXITCODE -eq 0) ('exit=' + $LASTEXITCODE)
+
+          mavis-trash $d 2>$null | Out-Null
+          Chk 'a real directory is deleted' (-not (Test-Path -LiteralPath $d)) $d
+
+          mavis-trash (Join-Path $probe 'nope.txt') 2>$null | Out-Null
+          Chk 'a missing target is an ERROR' ($LASTEXITCODE -ne 0) ('exit=' + $LASTEXITCODE)
+
+          $g = Join-Path $probe 'three.txt'
+          [IO.File]::WriteAllText($g, 'z')
+          mavis-trash -rf $g 2>$null | Out-Null
+          Chk 'rm-style flags are stripped' ($LASTEXITCODE -eq 0) ('exit=' + $LASTEXITCODE)
+          Chk '...and the real target behind them was deleted' (-not (Test-Path -LiteralPath $g)) $g
+
+          mavis-trash $probe 2>$null | Out-Null
+          Write-Host ("shim self-check failures: " + $fail)
+          if ($fail -gt 0) { exit 1 }
+          exit 0
+
+      # ── 3. the real thing ──────────────────────────────────────────────
+      # One command, all 20 steps, exactly as documented in README.md.
+      # The explicit `exit $LASTEXITCODE` is load-bearing: running a child
+      # checker as the last statement does not propagate a non-zero code on
+      # its own, and a wrapper that always returns 0 turns every failure into
+      # a green build.
+      - name: 03 full 20-step checkall
+        shell: powershell
+        run: |
+          & powershell -NoProfile -ExecutionPolicy Bypass -File .\checks\_checkall.ps1
+          $code = $LASTEXITCODE
+          Write-Host ("checkall exit code: " + $code)
+          exit $code

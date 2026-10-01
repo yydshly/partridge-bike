@@ -19,11 +19,12 @@ Set-Location $Dir
 #   步数写着 16（当时已经 18），源码大小写着 ~100 KB（实际 252 KB）。
 # 而没有任何检查会读文档，所以它能一路静默地漂完一整个阶段。
 #
-# 查四件事，每一条都点名到文件和行：
+# 查五件事，每一条都点名到文件和行：
 #   ① 文档里 `-File <路径>` 的路径**真实存在**（照抄会不会报错）
 #   ② 文档里声明的**总步数** == _checkall.ps1 实际的 Step 条数
 #   ③ 文档里写的产物文件数 == _paths.ps1 认得的产物数
 #   ④ 文档里点名的 `dist\` 产物文件名，_paths.ps1 全部认得（不许有幻觉文件名）
+#   ⑤ LICENSE 文件在不在，和 README 里的声明**一致**（不一致就是有一份过期了）
 #
 # ⚠️ ②③ 只查「总数声明」，**不查「第 N 步」**：
 #    AGENTS.md 里有一堆「第 17 步」「4/15、5/15 步」，那些是**当时**的事，
@@ -147,10 +148,39 @@ foreach ($fp in $docTxt.Keys){
   }
 }
 
-Write-Output ("  文档 {0} 份 · 产物清单 {1} 个 · _checkall 实际 {2} 步" -f $docTxt.Count, $outCount, $steps)
+# ── ⑤ LICENSE 文件在不在，和 README 的声明必须一致 ────────────
+# 2026-10-01 的决定是**不加 LICENSE**（保留所有权利）。决定本身没问题，
+# 问题在于「决定不加」和「忘了加」在访客眼里**长得一模一样** ——
+# 两种情况下仓库根目录都是空的。所以必须有一份写下来的声明，
+# 把它从疏漏变成决定；判据再钉住「声明 ↔ 文件」两边不许各说各话。
+#
+# 四种组合，只有两种自洽：
+#   没文件 + 写了「保留所有权利」   → 自洽（这是明写的决定）
+#   有文件 + 没写「保留所有权利」   → 自洽（README 跟着文件走）
+#   没文件 + 没写                  → 报红（看起来像忘了加）
+#   有文件 + 还写着「保留所有权利」 → 报红（两份自相矛盾，总有一份是过期的）
+# 只查第三种的话，「后来补了 LICENSE 却忘了改 README」这种就漏了。
+#
+# ⚠️ LICENSE 按 **$Dir** 解析（文档从哪儿读，它就从哪儿读），不按 $ROOT：
+#    反查要把 README/AGENTS 复制到临时目录，再往那个目录里放/拿掉一个
+#    LICENSE 文件。按 $ROOT 解析的话那个文件永远看不见，
+#    第 4、5 两条反查就都是恒过的 —— 判据能对着真仓库跑，不等于它抓得住。
+$licExists = Test-Path -LiteralPath (Join-Path $Dir 'LICENSE')
+$rdName = [IO.Path]::GetFileName($README)
+$rdTxt = ''
+foreach ($k in $docTxt.Keys) { if ([IO.Path]::GetFileName($k) -eq $rdName) { $rdTxt = [string]$docTxt[$k] } }
+$declaresNone = ($rdTxt -match '保留所有权利' -or $rdTxt -match '未选择许可证')
+if (-not $licExists -and -not $declaresNone) {
+  Bad $rdName 0 'LICENSE' '没有 LICENSE 文件，README 也没写明「保留所有权利」—— 对访客来说这不是一个决定，看起来是忘了加'
+} elseif ($licExists -and $declaresNone) {
+  Bad $rdName 0 'LICENSE' 'README 写着「保留所有权利」，但同一个目录里已经有 LICENSE 文件了 —— 两边自相矛盾，总有一份是过期的'
+}
+
+Write-Output ("  文档 {0} 份 · 产物清单 {1} 个 · _checkall 实际 {2} 步 · LICENSE {3}" -f $docTxt.Count, $outCount, $steps,
+  $(if ($licExists) { '有文件' } elseif ($declaresNone) { '无文件，README 已写明保留所有权利' } else { '无文件且未声明' }))
 if ($bad -gt 0) {
-  Write-Output ("  → {0} 处文档漂移（照抄会报错 / 数字过期 / 文件名是幻觉）" -f $bad)
+  Write-Output ("  → {0} 处文档漂移（照抄会报错 / 数字过期 / 文件名是幻觉 / 许可声明与文件矛盾）" -f $bad)
   exit 1
 }
-Write-Output '  文档没有漂：命令路径都在、步数对得上、产物名都认得。'
+Write-Output '  文档没有漂：命令路径都在、步数对得上、产物名都认得、许可声明和 LICENSE 文件一致。'
 exit 0

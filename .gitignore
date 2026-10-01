@@ -9,16 +9,23 @@
 #  想跑成品（需要 src\_app3d.html + assets\bgm\*.mp3 + assets\vendor\）：
 #      powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\_build.ps1
 #
-#  dist/ 里包括：
+#  dist/ 里包括（13 个产物）：
 #    partridge-3d.html    构建产物
 #    _uistate.html        注入式探针页 = 成品 + 一段检查代码
-#    _driveharness.html   等 7 个回归页：由 gen\_mk*.ps1 从 src\_app3d.html
+#    _touchharness.html   窄屏 + 触屏手势页（量真实矩形，不靠看图）
+#    _driveharness.html   等 8 个回归页：由 gen\_mk*.ps1 从 src\_app3d.html
 #                         **切代码段**生成。切的是源文件里的原文，
 #                         不是手抄，所以不提交也不会丢任何信息
 #    _cruisediag.html     诊断页
-#    partridge-dbg.html   实拍页（gen\_mkdbg.ps1 生成，验完就删）
-#    _pathtest.ps1        反查用的靶子，只在 checks\self\_pathtest.ps1
-#                         跑的那几秒里存在，验完自己删
+#    partridge-dbg.html   三个实拍页之一，验完就删。
+#    _pause.html          _mkpause.ps1 的暂停/恢复复测页。
+#    _rec.html            _mkrec.ps1 的录像探针页。
+#                         ⚠️ 三个探针曾经**共用** partridge-dbg.html，
+#                         谁后跑谁覆盖前一个，而且**每一个都 exit 0** ——
+#                         「我刚那个页面还在不在」没人问。
+#                         判据：checks\_pathcheck.ps1 的第 ④ 条。
+#    _pathtest\_paths.ps1 反查用的靶子（_paths.ps1 的一份坏副本），
+#    _cicheck\            只在 checks\_cicheck.ps1 跑的那几秒里存在，验完自己删
 dist/
 
 # ─────────────────────────────────────────────────────────────

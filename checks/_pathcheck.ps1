@@ -1,4 +1,10 @@
-﻿param()
+﻿param(
+  # 判据必须能对着**别处的** _paths.ps1 跑，否则验不到它自己。
+  # 验 ④ 得故意造一份「三个探针指向同一个文件」的 _paths.ps1，
+  # 而那不能是真文件 —— 和 _doccheck.ps1 的 -Dir、_pages.ps1 的 -Dir
+  # 是同一个道理：判据只写死一个目录，就永远只能验真仓库。
+  [string]$PathsFile
+)
 # 路径收口的**常驻**判据：_paths.ps1 认得的文件名，代码里一处硬写的都不能有。
 #
 # 为什么它必须常驻、而不是只活在 _refactor.ps1 里：
@@ -16,6 +22,7 @@
 $p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
 if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
 . (Join-Path $p '_paths.ps1')
+if (-not $PathsFile) { $PathsFile = Join-Path $ROOT '_paths.ps1' }
 $ErrorActionPreference = 'Stop'
 
 # ── 从 _paths.ps1 自动推出「文件名 → 变量」映射 ──────────────
@@ -27,7 +34,7 @@ $ErrorActionPreference = 'Stop'
 #    $OUT_DRIVE 这些是文件，必须收进来。区别在**变量名**，不在叶子名。
 $map = @{}
 $dirCount = 0
-foreach ($line in [IO.File]::ReadAllLines((Join-Path $ROOT '_paths.ps1'))) {
+foreach ($line in [IO.File]::ReadAllLines($PathsFile)) {
   if ($line -match '^\$(?<var>\w+)\s*=\s*"\$(?:ROOT|DIR_\w+)(?<rest>.*?)"\s*(?:#.*)?$') {
     if ($Matches['var'] -match '^(ROOT|DIR_)') { $dirCount++; continue }
     $leaf = Split-Path $Matches['rest'] -Leaf
@@ -92,7 +99,7 @@ foreach ($f in $scripts) {
 $shadow = @()
 $pathVarNames = @('ROOT', 'APP', 'PRODUCT', 'BGM_META', 'THREE_LIB', 'README', 'AGENTS',
                   'SCREENSHOT', 'GITIGNORE', 'GITATTRS')
-foreach ($line in [IO.File]::ReadAllLines((Join-Path $ROOT '_paths.ps1'))) {
+foreach ($line in [IO.File]::ReadAllLines($PathsFile)) {
   if ($line -match '^\$(S_\w+|TPL_\w+|OUT_\w+|DIR_\w+)\s*=') { $pathVarNames += $Matches[1] }
 }
 $pathVarNames = @($pathVarNames | Sort-Object -Unique)
@@ -123,6 +130,61 @@ foreach ($f in $scripts) {
   }
 }
 
+# ── ④ 三个实拍探针必须各写各的文件 ───────────────────────────
+# 病史：_mkdbg / _mkpause / _mkrec 三个探针**共用**一个 $OUT_DBG。
+# 三个脚本每一个都 exit 0、每一行输出看着都正常，但**谁后跑谁把前一个的页覆盖掉**：
+# 跑完 _mkpause 之后，取景页就没了，再想截一张得重跑 _mkdbg。
+#
+# 为什么它能烂这么久：这类错**不产生任何失败信号**。
+# 语法、自由变量、harness、交付自检全绿 —— 因为每个脚本都成功地写了一个文件，
+# 只是写的是同一个文件。「我刚生成的那个页面还在不在」这句话，
+# 在改之前没有任何一个脚本问过。
+#
+# 判据：从 $PathsFile 里解析三个 $OUT_* 的值，要求两两不同，且都存在。
+# 变量名**不从判据里抄** —— 抄的话，两边同时过期时判据会去查一个不存在的变量，
+# 而「查不到」在这段代码里和「有冲突」是两回事，所以必须把「没定义」单独报出来。
+$probeOutVars = @('OUT_DBG', 'OUT_PAUSE', 'OUT_REC')
+$pfOut = @{}
+$pfDup = @()
+foreach ($line in [IO.File]::ReadAllLines($PathsFile)) {
+  if ($line -match '^\$(?<v>OUT_\w+)\s*=\s*"(?<val>[^"]+)"\s*(?:#.*)?$') {
+    $v = $Matches['v']; $val = $Matches['val']
+    # ⚠️ 必须单独报「同名定义两次且值不同」。这一条是被自己的反查逼出来的：
+    #    往 _paths.ps1 里塞一行 `$OUT_REC = <和 $OUT_PAUSE 同一个文件>`，
+    #    下面的真 _paths.ps1 里那行 `$OUT_REC = <它自己的文件>` 还在、且在后面，
+    #    PowerShell 是**后者生效**，所以文件本身并没有真的撞车 ——
+    #    于是判据放行，而它验的其实是「最后一行写了什么」。
+    #    哈希表 `$pfOut[$v] = $val` 和 PowerShell 一样只留后者，
+    #    所以判据天生看不见这一类。这不是它该放过的：**同一个变量被定义两次**
+    #    本身就说明有人改在了错的地方，后一行是意外覆盖的产物。
+    if ($pfOut.ContainsKey($v) -and $pfOut[$v] -ne $val) {
+      $pfDup += ("$v 被定义了两次且值不同（后一行生效，前一行被悄悄覆盖）：{0} ← {1}" -f
+                 [IO.Path]::GetFileName([string]$pfOut[$v]), [IO.Path]::GetFileName($val))
+    }
+    $pfOut[$v] = $val
+  }
+}
+$clash = @($pfDup)
+$pfSeen = @{}
+foreach ($v in $probeOutVars) {
+  if (-not $pfOut.ContainsKey($v)) {
+    $clash += ("$v 在 _paths.ps1 里没有定义 —— 少一个输出文件，三个探针就会写到一起")
+    continue
+  }
+  $val = [string]$pfOut[$v]
+  if ($pfSeen.ContainsKey($val)) {
+    $clash += ("$v 和 " + $pfSeen[$val] + " 都指向 " + [IO.Path]::GetFileName($val) + " —— 后跑的会覆盖先跑的")
+  } else {
+    $pfSeen[$val] = $v
+  }
+}
+if ($clash.Count -eq 0) {
+  Write-Output ("三个实拍探针各写各的：{0}" -f (($probeOutVars | ForEach-Object { [IO.Path]::GetFileName([string]$pfOut[$_]) }) -join ' · '))
+} else {
+  Write-Output ("  ! {0} 处探针输出撞车：" -f $clash.Count)
+  $clash | ForEach-Object { Write-Output ("      " + $_) }
+}
+
 $bad = 0
 if ($stragglers.Count -gt 0) {
   $bad++
@@ -139,6 +201,8 @@ if ($shadow.Count -gt 0) {
   Write-Output ("  ! {0} 处给 _paths.ps1 的变量名赋值 —— PowerShell 大小写不敏感，`$app = ...` 就是 `$APP = ...`:" -f $shadow.Count)
   $shadow | ForEach-Object { Write-Output ("      " + $_) }
 }
+
+if ($clash.Count -gt 0) { $bad++ }
 
 # ── ③ 源有没有被 .gitignore 悄悄踢出版本库 ──────────────────
 # 这是**搬文件 / 改整目录 ignore** 之后唯一的兜底。
@@ -163,7 +227,7 @@ if (Test-Path -LiteralPath (Join-Path $ROOT '.git')) {
 
 Write-Output ''
 if ($bad -eq 0) {
-  Write-Output '路径收口成立：_paths.ps1 认得的文件名，代码里一处硬写的都没有；源也没有被 ignore 踢掉。'
+  Write-Output '路径收口成立：_paths.ps1 认得的文件名，代码里一处硬写的都没有；探针输出互不覆盖；源也没有被 ignore 踢掉。'
   exit 0
 }
 Write-Output ("pathcheck 失败 {0} 类" -f $bad)

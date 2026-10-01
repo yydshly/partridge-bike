@@ -1,5 +1,5 @@
 ﻿param()
-# _doccheck.ps1 的反查：把**真文档复制一份**，逐个注入四类漂移，
+# _doccheck.ps1 的反查：把**真文档复制一份**，逐个注入五类漂移，
 # 要求同一个判据每次都翻红；再要求原封不动的真文档一次都不红。
 #
 # 为什么要专门做这一份，而且为什么是「复制真文档」而不是「造一份假文档」：
@@ -32,6 +32,21 @@ function Reset-Tmp {
 }
 function Inject { param($text)
   Add-Content -LiteralPath (Join-Path $tmp $README_NAME) -Value $text -Encoding UTF8
+}
+# 把 README 里**所有**「保留所有权利 / 未选择许可证」的行删掉，再补一段新的话。
+# 不用 Inject（它是追加）：留着那几行的话，判据照样能从原文里读到声明，
+# 反查就成了「在好文档后面追加一段坏话」——而真实事故是**声明被删掉**。
+function Rewrite-Readme { param($text)
+  $fp = Join-Path $tmp $README_NAME
+  $lines = [IO.File]::ReadAllLines($fp)
+  $keep = @($lines | Where-Object { $_ -notmatch '保留所有权利' -and $_ -notmatch '未选择许可证' })
+  $body = ($keep -join "`r`n").TrimEnd() + "`r`n`r`n" + $text + "`r`n"
+  [IO.File]::WriteAllText($fp, $body, (New-Object Text.UTF8Encoding($false)))
+}
+function Set-License { param([switch]$On)
+  $lic = Join-Path $tmp 'LICENSE'
+  if ($On) { [IO.File]::WriteAllText($lic, 'All rights reserved.', (New-Object Text.UTF8Encoding($false))) }
+  elseif (Test-Path $lic) { mavis-trash $lic }
 }
 
 $fail = 0
@@ -97,8 +112,32 @@ Write-Output ("  {0}  四处坏同时报出来，退出码 {1}，期望 1{2}" -f
 if (-not $ok6) { Write-Output (($out6.TrimEnd() -split "`n" | ForEach-Object { '        ' + $_ }) -join "`n") }
 
 Write-Output ''
+Write-Output '=== 7) 删掉 README 里的许可声明、又没有 LICENSE 文件：必须 exit 1 且含 LICENSE ==='
+Write-Output '    （这个仓库的决定是「不加 LICENSE，保留所有权利」。可「没加」和「决定不加」'
+Write-Output '      在访客眼里一模一样 —— 都是根目录空的。只有把声明写进 README，'
+Write-Output '      它才从疏漏变成决定。判据要能抓住「声明被删了」这个半途而废的状态。）'
+Reset-Tmp
+Rewrite-Readme '本项目的授权方式见仓库设置。'
+Case '许可声明和文件都没有' 1 'LICENSE'
+
+Write-Output ''
+Write-Output '=== 8) 补上了 LICENSE 文件、README 却还写着保留所有权利：必须 exit 1 且含 LICENSE ==='
+Write-Output '    （只查第 7 条那种状态的话，「将来开源时补了文件忘了改声明」就漏了。'
+Write-Output '      两边自相矛盾时，总有一份是过期的，而访客没理由知道是哪一份。）'
+Reset-Tmp
+Set-License -On
+Case '文件和声明互相矛盾' 1 'LICENSE'
+
+Write-Output ''
+Write-Output '=== 9) 有 LICENSE、README 也改成指名许可证：必须 exit 0（好样本不误伤）==='
+Reset-Tmp
+Set-License -On
+Rewrite-Readme '本项目采用 MIT 许可证。'
+Case '文件和声明一致（有许可证）' 0 'LICENSE 有文件'
+
+Write-Output ''
 if ($fail -eq 0) {
-  Write-Output 'doc 反查成立：好文档放行，四类漂移都拦得住且各自点名（不是恒过）'
+  Write-Output 'doc 反查成立：好文档放行，五类漂移都拦得住且各自点名（不是恒过）'
   mavis-trash $tmp
   exit 0
 } else {

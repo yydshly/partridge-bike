@@ -9,7 +9,8 @@ $p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = 
 if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
 . (Join-Path $p '_paths.ps1')
 $dir = $ROOT
-$out = $OUT_DBG
+# 一人一份输出：以前三个探针都写 $OUT_DBG，后跑的覆盖先跑的
+$out = $OUT_REC
 $t = [IO.File]::ReadAllText(($PRODUCT))
 
 $hook = @'

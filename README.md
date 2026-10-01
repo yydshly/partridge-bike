@@ -51,11 +51,12 @@ partridge-bike\
     vendor\         three149.min.js
   docs\             截图
   templates\        9 个回归页模板
-  gen\              12 个生成器（_mk*.ps1），从 _app3d.html 切代码段造回归页
+  gen\              13 个生成器（_mk*.ps1），从 _app3d.html 切代码段造回归页
   tools\            _build / _deploy / _serve / _swap / _refactor
-  checks\           编排器 _checkall.ps1 + 五个静态判据 + _pathcheck
-    self\           六个「判据自己靠不靠谱」的反查
+  checks\           编排器 _checkall.ps1 + 8 个判据
+    self\           8 个「判据自己靠不靠谱」的反查
   dist\             **全部产物**，整目录在 .gitignore 里
+  .github\workflows\  verify.yml（CI：Windows + PowerShell 5.1，跑全 20 步）
 ```
 
 根目录只剩 5 个文件 —— 「哪个是源、哪个是产物」不用再靠记。
@@ -106,12 +107,13 @@ partridge-bike\
 | `checks/_checkall.ps1` | **一条命令跑完全部验证**（20 步） |
 | `templates/_*.tpl.html`（9 个） | 回归页模板，套桩用 |
 | `gen/_mk*.ps1`（13 个） | 生成器：从源文件**切代码段**造回归页 |
-| `checks/` | 五个静态判据 + `_pages` 清点 + `_pathcheck` 路径收口 + `_doccheck` 文档防漂移 |
-| `checks/self/`（7 个） | 「判据自己靠不靠谱」的反查 |
+| `checks/`（8 个判据） | `_syntaxcheck` `_freevar` `_scopecheck` `_harnesslint` + `_pages` 清点 + `_pathcheck` 路径收口 + `_doccheck` 文档防漂移 + `_cicheck` CI 配置 |
+| `checks/self/`（8 个） | 「判据自己靠不靠谱」的反查 |
 | `tools/` | `_build` `_deploy` `_serve` `_swap` `_refactor` |
-| `dist/` | 全部产物：成品 + 8 个回归页 + 诊断页/实拍页（整目录 gitignore） |
+| `.github/workflows/verify.yml` | CI：Windows runner + PowerShell 5.1，跑全 20 步 |
+| `dist/` | 全部产物：成品 + 8 个回归页 + 1 诊断页 + 3 个探针页（整目录 gitignore） |
 | `AGENTS.md` | 项目记忆与方法论（踩过的坑都在里面） |
-| `.gitignore` | 排除 `dist\`（= 11 个产物：1 成品 + 1 探针 + 8 回归页 + 1 诊断页） |
+| `.gitignore` | 排除 `dist\`（= 13 个产物：1 成品 + 3 探针 + 8 回归页 + 1 诊断页） |
 
 **路径只有一处出处。** 32 个脚本开头都是这三行，从 `$PSScriptRoot` 往上找 `_paths.ps1`——
 
@@ -122,7 +124,7 @@ if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
 ```
 
 所以**搬目录、改文件名、挪产物位置，只改 `_paths.ps1` 里的目录定义**，
-其余文件一个字都不用动。`_paths.ps1` 末尾会自查 57 个必须存在的路径，
+其余文件一个字都不用动。`_paths.ps1` 末尾会自查 52 个必须存在的路径，
 搬错了在第一秒就炸，而不是等到某个 harness 静默跑空、而所有检查照样全绿。
 
 **`.ps1` 必须是 UTF-8 with BOM。** 少了 BOM，PowerShell 5.1 会按 ANSI
@@ -136,8 +138,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\checks\_checkall.ps1
 ```
 
 20 步：构建 → 语法（源码 + 成品）→ 自由变量/作用域 ×2 → 面板状态探针
-→ 窄屏 + 触屏手势 → 重新生成七个回归页 → 作用域体检 → 交付自检
-→ 两套检查器的自检 → 路径收口 → 音频完整性 → 页面清点 → **文档防漂移**。
+→ 窄屏 + 触屏手势 → 重新生成八个回归页 → 作用域体检 → 交付自检
+→ 八套检查器的自检 → 路径收口 → 音频完整性 → 页面清点 → **文档防漂移**。
 
 **它只证明「能生成、能通过静态检查」，证明不了画面。** 画面只能靠真机打开
 `dist\partridge-3d.html` 看一眼——2026-09-30 就交过一版**所有检查全绿、画面全黑**
@@ -166,7 +168,33 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\checks\_checkall.ps1
 八套实测（2026-10-01）：`58/58` · `34/34` · `39/39` · `450/450` · `85/85` ·
 `41/41` · `50/50` · `52/52`。
 
+## CI
+
+`.github\workflows\verify.yml` 在 **Windows runner + Windows PowerShell 5.1**
+（和本机完全一致）上跑 `checks\_checkall.ps1` 的**全部 20 步**，
+push 到 `main` 和每个 PR 都跑。本机脚本**一行都没改**。
+
+仓库里有 8 处脚本调用本机的 `mavis-trash`（可恢复删除）来清理临时目录，
+CI runner 上没有这个工具，所以 workflow 会在 `$env:RUNNER_TEMP` 下
+生成一个同名垫片并加进 `PATH`。
+
+**垫片必须真的删**。一个空转的垫片（打一行成功、什么都没删）会让那 8 处
+`mavis-trash` 全部「成功」，而紧跟其后的 `New-Item -Force` 会把旧目录原样留着 ——
+于是「清理 → 重建」这段代码在 CI 上等于一次都没跑过，CI 恰恰是唯一该跑它的地方。
+所以 workflow 里紧跟着垫片还有一步**当场证明它删得掉**：建一个临时文件、
+交给垫片删、断言它确实没了。垫片哪天退化成空转，这一步会先红。
+
 ## 许可与来源
+
+**本仓库没有 LICENSE 文件，默认保留所有权利。**
+
+这是一次写明的决定，不是忘了加：2026-10-01 明确选择不给开源许可，
+所以不要假定它可以随意使用、复制或再分发。
+
+之所以要专门写下来：「没加 LICENSE」和「决定不加」在访客眼里**长得一模一样** ——
+两种情况下仓库根目录都是空的。于是 `checks\_doccheck.ps1` 的第 ⑤ 条判据
+盯着「README 的声明 ↔ LICENSE 文件在不在」必须一致：将来真要开源、
+补上 `LICENSE` 却忘了改这行字，判据会当场指出两边自相矛盾。
 
 - 渲染：[three.js](https://threejs.org/) r149，**已 vendored** 在 `assets\vendor\`，不联网拉取。
 - 配乐：8 首 AI 生成的曲子，音频文件保留在仓库里。生成条款若有要求，请按实际情况补充本节。

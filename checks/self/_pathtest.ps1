@@ -39,12 +39,13 @@ $jpLit = 'Join-Path ' + $dl + ' ' # 判据 ② 输出里的那串字
 
 $fail = 0
 
-function Run-Check {
-  $o = & powershell -NoProfile -ExecutionPolicy Bypass -File $check 2>&1 | Out-String
+function Run-Check([string]$Pf) {
+  $o = if ($Pf) { & powershell -NoProfile -ExecutionPolicy Bypass -File $check -PathsFile $Pf 2>&1 | Out-String }
+       else     { & powershell -NoProfile -ExecutionPolicy Bypass -File $check 2>&1 | Out-String }
   return @{ code = $LASTEXITCODE; out = $o }
 }
-function Expect($name, $wantCode, $wantText) {
-  $r = Run-Check
+function Expect($name, $wantCode, $wantText, [string]$Pf) {
+  $r = Run-Check $Pf
   $okExit = ($r.code -eq $wantCode)
   $okText = if ($wantText) { ($r.out -match [regex]::Escape($wantText)) } else { $true }
   $ok = $okExit -and $okText
@@ -113,9 +114,76 @@ try {
 }
 
 Write-Output ''
+# ── 判据 ④ 的反查：三个实拍探针的输出文件不许撞车 ──────────────
+# 病是真的：_mkdbg / _mkpause / _mkrec 三个探针**共用**一个 $OUT_DBG。
+# 三个脚本每一个都 exit 0、每一行输出都正常，可谁后跑谁把前一个的页覆盖掉 ——
+# 「我刚那个取景页还在不在」这件事，改之前没有任何一个脚本问过。
+# 也就是说这类错**不产生任何失败信号**：别的判据全都抓不到它。
+#
+# 靶子是一份**改造过的 _paths.ps1 副本**，用 -PathsFile 指过去 ——
+# 判据只认真文件的话，这条反查就无从下手。
+# 副本放 dist\：pathcheck 的脚本扫描跳过 dist\，所以 ① 看不见它，
+# 于是这里 exit 1 只可能来自 ④ —— 证的是 ④ 本身，不是「反正红了吧」。
+$pfOrig = [IO.File]::ReadAllLines((Join-Path $ROOT '_paths.ps1'))
+$fixtureDir = Join-Path $DIR_OUT '_pathtest'
+$pfIdx = @{}
+for ($i = 0; $i -lt $pfOrig.Count; $i++) {
+  if ($pfOrig[$i] -match '^\$(OUT_[A-Z]+)\s*=') { $pfIdx[$Matches[1]] = $i }
+}
+foreach ($need in @('OUT_DBG','OUT_PAUSE','OUT_REC')) {
+  if (-not $pfIdx.ContainsKey($need)) {
+    throw ("反查注入失败：_paths.ps1 里没有 `$$need 这一行 —— 判据 ④ 的三个变量名和 _paths.ps1 已经对不上了，" +
+           "这两边同时过期的话，④ 会去查一个不存在的变量，而「查不到」和「有冲突」是两回事。")
+  }
+}
+$pfFile = Join-Path $fixtureDir '_paths.ps1'
+# ⚠️ mavis-trash 往 **stdout** 打一行「moved to trash」。不接住的话，
+#    PowerShell 会把它一起收进函数的返回值，返回值就变成
+#    @('那行字', '路径')，再被 [string] 形参一拼成一句带空格的话，
+#    pathcheck 于是报「The given path's format is not supported」。
+#    而那次的 exit 0 和「判据放过坏样本」在终端上**长得一模一样**。
+#    这也是为什么这里不写 `return $pfFile`：函数一旦有多余输出就全盘失真。
+function Build-Fixture([string[]]$lines) {
+  if (Test-Path $fixtureDir) { $null = mavis-trash $fixtureDir }
+  $null = New-Item -ItemType Directory -Path $fixtureDir -Force
+  [IO.File]::WriteAllLines($pfFile, $lines, (New-Object Text.UTF8Encoding($true)))
+  if (-not (Test-Path -LiteralPath $pfFile)) { throw '反查注入失败：夹具没写成' }
+  $script:pfBuilt = $pfFile
+}
+try {
+  # 5) 把 $OUT_REC 的**值**换成 $OUT_PAUSE 那个文件 —— 当年的病原样。
+  #    ⚠️ 第一版是在上面**多插一行** $OUT_REC = <_pause 的值>，判据却放行了。
+  #    原因是 PowerShell 里同一个变量**后一行生效**：真 _paths.ps1 里那行
+  #    原本的 $OUT_REC 还在、且在下面，于是实际值没变，判据（也用哈希表只留
+  #    后者）读到的就是没撞车的那个值。教训：造坏样本必须让「坏」在**最终生效值**上，
+  #    光在文件里留一行错字是不够的 —— 判据和解释器一致，也会被解释器的规则骗。
+  $src = $pfOrig[$pfIdx['OUT_PAUSE']]
+  $valTail = $src.Substring($src.IndexOf('='))          # '= "$DIR_OUT\_pause.html"  # …'
+  $clashVar = '$' + 'OUT_REC'
+  $clashLines = @($pfOrig[0..($pfIdx['OUT_REC'] - 1)]) + @(($clashVar + '     ' + $valTail)) +
+                @($pfOrig[($pfIdx['OUT_REC'] + 1)..($pfOrig.Count - 1)])
+  Build-Fixture $clashLines
+  Expect '两个探针写到同一个文件' 1 'OUT_REC' $script:pfBuilt
+
+  # 6) 整个变量没定义：必须单独报「没有定义」，不能当成「有冲突」糊过去
+  $missLines = @($pfOrig[0..($pfIdx['OUT_REC'] - 1)]) + @($pfOrig[($pfIdx['OUT_REC'] + 1)..($pfOrig.Count - 1)])
+  Build-Fixture $missLines
+  Expect '少一个探针输出变量' 1 '没有定义' $script:pfBuilt
+
+  # 7) 同名变量被定义两次且值不同（就是第 5 条第一版骗判据的那一招）：
+  #    必须被单独报出来，不许因为「后一行生效」而被放过
+  $dupLines = @($pfOrig[0..($pfIdx['OUT_REC'] - 1)]) + @($clashVar + '     ' + $valTail) +
+              @($pfOrig[$pfIdx['OUT_REC']..($pfOrig.Count - 1)])
+  Build-Fixture $dupLines
+  Expect '同一个输出变量被定义两次' 1 '被定义了两次' $script:pfBuilt
+} finally {
+  if (Test-Path $fixtureDir) { mavis-trash $fixtureDir }
+}
+
+Write-Output ''
 if (Test-Path $victim) { mavis-trash $victim }
 if ($fail -eq 0) {
-  Write-Output 'pathcheck 反查成立：好源码放行，注入的硬编码和数据来源路径都拦得住（不是恒过）'
+  Write-Output 'pathcheck 反查成立：好源码放行，注入的硬编码 / 数据来源路径 / 变量名碰撞 / 探针输出撞车都拦得住（不是恒过）'
   exit 0
 }
 Write-Output "pathcheck 反查失败 $fail 条"

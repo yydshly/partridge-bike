@@ -81,6 +81,10 @@ $S_LINT      = "$DIR_CHECKS\_harnesslint.ps1"
 $S_PAGES     = "$DIR_CHECKS\_pages.ps1"
 $S_PATHCHECK = "$DIR_CHECKS\_pathcheck.ps1"
 $S_DOCCHECK  = "$DIR_CHECKS\_doccheck.ps1"
+# CI 配置自身的判据。它是唯一一道「verifies the thing that cannot run here」
+# 的判据 —— verify.yml 只有 GitHub runner 会执行，而本机跑不了它，
+# 正是它会静默腐烂的原因。详见该文件抬头。
+$S_CICHECK   = "$DIR_CHECKS\_cicheck.ps1"
 
 # ── checks/self/：判「上面这些判据自己靠不靠谱」的那些 ─────────
 $S_SCOPETEST   = "$DIR_SELF\_scopetest.ps1"
@@ -131,7 +135,13 @@ $OUT_MOODSTATE = "$DIR_OUT\_moodstate.html"
 $OUT_UISTATE   = "$DIR_OUT\_uistate.html"
 $OUT_TOUCH     = "$DIR_OUT\_touchharness.html"
 $OUT_DIAG      = "$DIR_OUT\_cruisediag.html"      # _mkdiag 专用
-$OUT_DBG       = "$DIR_OUT\partridge-dbg.html"    # _mkdbg/_mkpause/_mkrec 专用
+# ⚠️ 三个**实拍探针**曾经共用一个 $OUT_DBG。三个脚本各自 exit 0、
+#    各自那行输出也完全正常，但**谁后跑谁把前一个的页覆盖掉** ——
+#    「取景页还在不在」这件事没有任何检查会问，所以它能一直烂着。
+#    现在一人一份；「三份必须互不相同」由 checks\_pathcheck.ps1 的 ④ 盯着。
+$OUT_DBG       = "$DIR_OUT\partridge-dbg.html"    # _mkdbg   专用（取景截图）
+$OUT_PAUSE     = "$DIR_OUT\_pause.html"           # _mkpause 专用
+$OUT_REC       = "$DIR_OUT\_rec.html"             # _mkrec   专用
 
 # 页名（不含目录）—— _pages.ps1 清点、_pagestest.ps1 反查都用这个
 $OUT_NAMES = @(
@@ -172,7 +182,7 @@ if ($outProbeGone.Count -gt 0) {
 $mustExist = @(
   $APP, $BGM_META, $THREE_LIB, $README, $AGENTS, $SCREENSHOT, $GITIGNORE, $GITATTRS,
   $S_BUILD, $S_DEPLOY, $S_SERVE, $S_SWAP, $S_REFRACTOR,
-  $S_CHECKALL, $S_SYNTAX, $S_FREEVAR, $S_SCOPE, $S_LINT, $S_PAGES, $S_PATHCHECK, $S_DOCCHECK,
+  $S_CHECKALL, $S_SYNTAX, $S_FREEVAR, $S_SCOPE, $S_LINT, $S_PAGES, $S_PATHCHECK, $S_DOCCHECK, $S_CICHECK,
   $S_SCOPETEST, $S_SYNTEST, $S_FREEVARTEST, $S_LINTTEST, $S_PAGESTEST, $S_DRIVEWIRES, $S_PATHTEST,
   $S_DOCTEST,
   $S_MKDRIVE, $S_MKTRAFFIC, $S_MKROUTE, $S_MKMOOD, $S_MKCRUISE, $S_MKMOODSTATE,
