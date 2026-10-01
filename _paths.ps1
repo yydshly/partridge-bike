@@ -55,6 +55,10 @@ if (-not (Test-Path -LiteralPath $DIR_OUT)) {
 $APP       = "$DIR_SRC\_app3d.html"                         # 唯一可编辑源
 $PRODUCT   = "$DIR_DIST\partridge-3d.html"                  # 构建产物
 $BGM_META  = "$DIR_SRC\_bgm-meta.json"                      # 曲目表 + 歌词
+# mp3 的**内容**基线（sha256 + 字节数）。第 19 步只验「产物里的 base64 == 盘上的 mp3」，
+# 换掉 mp3 之后重新构建它照样全绿 —— 这个文件才是「这些就是当初那批」的出处。
+# 换素材是有意的就重新生成它，见该文件 note 字段（别手改，会改漏字段）。
+$BGM_SHA    = "$DIR_SRC\_bgm-sha256.json"
 $THREE_LIB = "$DIR_VENDOR\three149.min.js"                 # 构建输入
 $README    = "$ROOT\README.md"
 $AGENTS    = "$ROOT\AGENTS.md"
@@ -85,6 +89,9 @@ $S_DOCCHECK  = "$DIR_CHECKS\_doccheck.ps1"
 # 的判据 —— verify.yml 只有 GitHub runner 会执行，而本机跑不了它，
 # 正是它会静默腐烂的原因。详见该文件抬头。
 $S_CICHECK   = "$DIR_CHECKS\_cicheck.ps1"
+# mp3 内容基线。这道判据和第 19 步查的是**两件事**：第 19 步管「产物里的
+# base64 有没有在传输中坏掉」，这道管「盘上那 8 个 mp3 本身还是不是当初那批」。
+$S_BGMHASH   = "$DIR_CHECKS\_bgmhash.ps1"
 
 # ── checks/self/：判「上面这些判据自己靠不靠谱」的那些 ─────────
 $S_SCOPETEST   = "$DIR_SELF\_scopetest.ps1"
@@ -95,6 +102,7 @@ $S_PAGESTEST   = "$DIR_SELF\_pagestest.ps1"
 $S_DRIVEWIRES  = "$DIR_SELF\_drivewires.ps1"
 $S_PATHTEST    = "$DIR_SELF\_pathtest.ps1"
 $S_DOCTEST     = "$DIR_SELF\_doctest.ps1"
+$S_BGMHASHTEST = "$DIR_SELF\_bgmhashtest.ps1"
 
 # ── gen/：生成器 ─────────────────────────────────────────────
 $S_MKDRIVE     = "$DIR_GEN\_mkdrive.ps1"
@@ -190,11 +198,12 @@ if ($outProbeGone.Count -gt 0) {
 #  往里加一行，它就不会被这条自检覆盖。所以清单里每一项都必须同时
 #  出现在上面的赋值里（_pathcheck.ps1 会反过来验这两份对不对得上）。
 $mustExist = @(
-  $APP, $BGM_META, $THREE_LIB, $README, $AGENTS, $SCREENSHOT, $GITIGNORE, $GITATTRS,
+  $APP, $BGM_META, $BGM_SHA, $THREE_LIB, $README, $AGENTS, $SCREENSHOT, $GITIGNORE, $GITATTRS,
   $S_BUILD, $S_DEPLOY, $S_SERVE, $S_SWAP, $S_REFRACTOR,
   $S_CHECKALL, $S_SYNTAX, $S_FREEVAR, $S_SCOPE, $S_LINT, $S_PAGES, $S_PATHCHECK, $S_DOCCHECK, $S_CICHECK,
+  $S_BGMHASH,
   $S_SCOPETEST, $S_SYNTEST, $S_FREEVARTEST, $S_LINTTEST, $S_PAGESTEST, $S_DRIVEWIRES, $S_PATHTEST,
-  $S_DOCTEST,
+  $S_DOCTEST, $S_BGMHASHTEST,
   $S_MKDRIVE, $S_MKTRAFFIC, $S_MKROUTE, $S_MKMOOD, $S_MKCRUISE, $S_MKMOODSTATE,
   $S_MKUISTATE, $S_MKDIAG, $S_MKHARNESS, $S_MKPAUSE, $S_MKREC, $S_MKDBG, $S_MKTOUCH,
   $TPL_DRIVE, $TPL_TRAFFIC, $TPL_ROUTE, $TPL_MOOD, $TPL_CRUISE, $TPL_MOODSTATE,

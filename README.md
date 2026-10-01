@@ -91,8 +91,8 @@ partridge-bike\
   templates\        9 个回归页模板
   gen\              13 个生成器（_mk*.ps1），从 _app3d.html 切代码段造回归页
   tools\            _build / _deploy / _serve / _swap / _refactor
-  checks\           编排器 _checkall.ps1 + 8 个判据
-    self\           8 个「判据自己靠不靠谱」的反查
+  checks\           编排器 _checkall.ps1 + 9 个判据
+    self\           9 个「判据自己靠不靠谱」的反查
   dist\             **全部产物**，整目录在 .gitignore 里
   .github\workflows\  verify.yml（CI：Windows + PowerShell 5.1，跑全 20 步）
 ```
@@ -139,14 +139,15 @@ partridge-bike\
 |---|---|
 | `src/_app3d.html` | **唯一可编辑源**（252 KB，带两个占位符） |
 | `assets/bgm/*.mp3` | 配乐源文件（8.2 MB，AI 生成，不可再生） |
+| `src/_bgm-sha256.json` | 上面那 8 个 mp3 的**内容基线**（sha256 + 字节数），见下面「素材不可再生」 |
 | `assets/vendor/three149.min.js` | three.js r149，构建时内联 |
 | `_paths.ps1` | **全仓库路径的唯一出处**（下面每一个路径都从它来） |
 | `tools/_build.ps1` | 把上面三样拼成 `dist\partridge-3d.html` |
 | `checks/_checkall.ps1` | **一条命令跑完全部验证**（20 步） |
 | `templates/_*.tpl.html`（9 个） | 回归页模板，套桩用 |
 | `gen/_mk*.ps1`（13 个） | 生成器：从源文件**切代码段**造回归页 |
-| `checks/`（8 个判据） | `_syntaxcheck` `_freevar` `_scopecheck` `_harnesslint` + `_pages` 清点 + `_pathcheck` 路径收口 + `_doccheck` 文档防漂移 + `_cicheck` CI 配置 |
-| `checks/self/`（8 个） | 「判据自己靠不靠谱」的反查 |
+| `checks/`（9 个判据） | `_syntaxcheck` `_freevar` `_scopecheck` `_harnesslint` + `_pages` 清点 + `_pathcheck` 路径收口 + `_doccheck` 文档防漂移 + `_cicheck` CI 配置 + `_bgmhash` 配乐内容基线 |
+| `checks/self/`（9 个） | 「判据自己靠不靠谱」的反查 |
 | `tools/` | `_build` `_deploy` `_serve` `_swap` `_refactor` |
 | `.github/workflows/verify.yml` | CI：Windows runner + PowerShell 5.1，跑全 20 步 |
 | `dist/` | 全部产物：成品 + 8 个回归页 + 1 诊断页 + 3 个探针页（整目录 gitignore） |
@@ -177,7 +178,29 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\checks\_checkall.ps1
 
 20 步：构建 → 语法（源码 + 成品）→ 自由变量/作用域 ×2 → 面板状态探针
 → 窄屏 + 触屏手势 → 重新生成八个回归页 → 作用域体检 → 交付自检
-→ 八套检查器的自检 → 路径收口 → 音频完整性 → 页面清点 → **文档防漂移**。
+→ 九套检查器的自检 → 路径收口 → 音频完整性 → 页面清点 → **文档防漂移**。
+
+## 素材不可再生，所以给它上了内容基线
+
+`assets/bgm/` 里那 8 个 mp3 是 8.2 MB、**仓库里只有这一份**的素材。
+第 19 步会把成品里的 base64 解码回来跟它们逐字节比——但它防的是
+「构建时用错文件 / base64 在传输中坏掉」，**防不住 mp3 本身被换掉**：
+换掉之后重新构建，产物和盘上文件会一起变，那一步仍然全绿。
+
+所以 `src/_bgm-sha256.json` 钉的是「这些 mp3 就是当初那批」（sha256 + 字节数，
+字节数也记是因为「大小一样而内容变了」才是最隐蔽的那种替换）。
+`checks\_bgmhash.ps1` 从**三个方向**查：盘上有而基线里没有、基线里有而盘上没了、
+两边都有但值不对——每一条都点名到具体文件。
+
+有意换素材（换歌、重新压制）就重新生成基线，别手改：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\checks\_bgmhash.ps1 -Update
+```
+
+基线是**代码生成的**，不是人手抄的字段——`-Update` 和
+`checks\self\_bgmhashtest.ps1` 造坏样共用同一段计算，否则那份「怎么更新」
+会自己过期而没人发现。
 
 **它只证明「能生成、能通过静态检查」，证明不了画面。** 画面只能靠真机打开
 `dist\partridge-3d.html` 看一眼——2026-09-30 就交过一版**所有检查全绿、画面全黑**
@@ -220,7 +243,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\checks\_checkall.ps1
 （和本机完全一致）上跑 `checks\_checkall.ps1` 的**全部 20 步**，
 push 到 `main` 和每个 PR 都跑。本机脚本**一行都没改**。
 
-仓库里有 8 处脚本调用本机的 `mavis-trash`（可恢复删除）来清理临时目录，
+仓库里有 9 处脚本调用本机的 `mavis-trash`（可恢复删除）来清理临时目录，
 CI runner 上没有这个工具，所以 workflow 会在 `$env:RUNNER_TEMP` 下
 生成一个同名垫片并加进 `PATH`。
 

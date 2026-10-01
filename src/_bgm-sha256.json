@@ -1,0 +1,48 @@
+{
+    "why":  "assets/bgm 里 8 个 mp3 的内容基线。判据见 checks/_bgmhash.ps1：第 19 步只验「产物里的 base64 == 盘上的 mp3」，换掉 mp3 之后重新构建它照样全绿；这个文件钉的是「这些就是当初那批」。",
+    "algo":  "SHA256",
+    "note":  "字节数也记下来：大小一样而内容变了，才是最难被发现的那种替换。有意更换素材后重新生成：powershell -NoProfile -ExecutionPolicy Bypass -File .\\checks\\_bgmhash.ps1 -Update",
+    "count":  8,
+    "tracks":  [
+                   {
+                       "file":  "bgm-1-sunset.mp3",
+                       "bytes":  887106,
+                       "sha256":  "9a25ee2aafb71073461ad26f7311cbe1d17ae8eeedd19829c3adcd720a2cbb37"
+                   },
+                   {
+                       "file":  "bgm-2-wind.mp3",
+                       "bytes":  1020017,
+                       "sha256":  "101bbe3528c1027537ef1988b7de2b9041badb25d485a6b9f38523ccc2d59797"
+                   },
+                   {
+                       "file":  "bgm-3-road.mp3",
+                       "bytes":  2963945,
+                       "sha256":  "c62a114e1fc414c957c66674baf2df7fffe178cd0e51c6aa91afbdcd349f878f"
+                   },
+                   {
+                       "file":  "bgm-4-dusk.mp3",
+                       "bytes":  1092324,
+                       "sha256":  "edfa15521a1a36a6db0f3201af36c4b9d690f84156e9b8b0cfb55a43cdbe2017"
+                   },
+                   {
+                       "file":  "bgm-5-slow.mp3",
+                       "bytes":  355880,
+                       "sha256":  "05c08bea4d450c113bd3d08a612dbade62db370ea84fe5ccf0fbfb44a9cc73ff"
+                   },
+                   {
+                       "file":  "bgm-6-wind.mp3",
+                       "bytes":  596206,
+                       "sha256":  "b51fdf245ee52959609fa3932775a3551bf81642942991d589edffd84fc9b7d1"
+                   },
+                   {
+                       "file":  "bgm-7-quiet.mp3",
+                       "bytes":  585757,
+                       "sha256":  "a343524aef6b7f43eda1ed3540ec969088fe2a7191ed8767aaa2b5919135da64"
+                   },
+                   {
+                       "file":  "bgm-8-onward.mp3",
+                       "bytes":  650959,
+                       "sha256":  "f2d93f3a2be2158e8fac6430d59fd561ceba9876634919889a089897e6480401"
+                   }
+               ]
+}
