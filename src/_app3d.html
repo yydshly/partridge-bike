@@ -139,6 +139,14 @@
 
   @media (max-width:820px){
     body{padding:8px}
+    /* ⚠️ 这两行不能省。上面 body{} 里写的 padding-left/right:max(16px,env(...))
+       是被这里的 `padding:8px` **shorthand 整个重置掉**的 —— 媒体查询不加优先级，
+       后写的赢。而手机恰恰是 env(safe-area-inset-*) 真正非 0 的地方（刘海屏横过来
+       两侧要留），只写桌面那一份等于在唯一用得上的场景里失效。
+       顺带一提：桌面浏览器里 env() 恒为 0，所以**这个洞在桌面和 harness 上都测不出来**
+       （_touchharness 的 390/852 视口是桌面 Chrome，env() 给 0，量的是 8px 而不是 inset）。 */
+    body{padding-left:max(8px, env(safe-area-inset-left));
+         padding-right:max(8px, env(safe-area-inset-right))}
     /* 去掉 (100vh - 236px) 那个桌面假设：236 是桌面面板的实测高度，
        手机上真实面板高得多，照抄会把舞台挤成一条线。窄屏改成整幅宽 + 页面滚动。 */
     .stage{width:100%}
@@ -178,6 +186,10 @@
         压根进不了上面那段 max-width，只写一份的话横屏按钮还是 31px 高。 */
   @media (max-height:560px){
     body{padding:6px}
+    /* 同上：shorthand 之后必须重写长写法。手机横屏（852×390）宽度 852 > 820，
+       进不了上面那段，只能靠这里 —— 而横屏恰恰是两侧刘海/圆角最吃紧的姿态。 */
+    body{padding-left:max(6px, env(safe-area-inset-left));
+         padding-right:max(6px, env(safe-area-inset-right))}
     .stage{width:min(100%, calc((var(--appvh) - 108px) * 16 / 9))}
     .panel{padding:8px 10px; gap:6px 10px}
     .hint{display:none}                /* 横着本来就窄，提示条会和 HUD 抢地方 */
