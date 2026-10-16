@@ -1,9 +1,23 @@
 # 鹧鸪骑单车 3D · Partridge on Wheels
 
-![鹧鸪骑单车](docs/screenshot.jpg)
-
 一只鹧鸪骑车。Three.js 单文件动画，**11.7 MB，一个 HTML 文件就是全部**——
 不需要联网、不需要装任何东西、不需要起服务器。
+
+## 演示视频
+
+**10 月 1 日，用 MiniMax 实现了这个骑行小世界：项目代码和全部 8 首音乐均由 MiniMax 模型生成。**
+
+[![鹧鸪骑单车完整演示：MiniMax 生成代码与全部音乐，点击查看视频](docs/demo-cover.jpg)](https://github.com/yydshly/partridge-bike/releases/tag/demo-video-2026-10-17)
+
+**[查看演示视频](https://github.com/yydshly/partridge-bike/releases/tag/demo-video-2026-10-17)** · **[下载 1080p MP4 原片](https://github.com/yydshly/partridge-bike/releases/download/demo-video-2026-10-17/partridge-minimax-full-1080p.mp4)** · **[在线试玩](https://yydshly.github.io/partridge-bike/)**
+
+2 分 16 秒 · 1920 × 1080 · 中英双语说明 · 含音乐与环境音。
+
+- 六段路线、昼夜与天气切换、驾驶与自动巡航、多种镜头。
+- 全部 8 首配乐的片段，以及歌词、暂停、恢复、切歌和音量控制演示。
+- 独立环境音试听、导演模式介绍，以及手机、离线运行和导出功能说明。
+
+视频使用原项目实时渲染的画面与原配乐，分镜、说明字幕和状态面板为视频制作添加；状态面板并非网站原始界面。原片作为本仓库的 Release 附件保存。
 
 ## ▶ 在线玩
 
