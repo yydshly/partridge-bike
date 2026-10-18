@@ -132,12 +132,12 @@
                      "costCny":  null,
                      "tokens":  null,
                      "requests":  null,
-                     "modelSource":  "用户说明：Opus 5.5，中等，运行工具为 Claude Code。",
+                     "modelSource":  "用户说明：Opus 5.5，中等，运行工具为 Claude Code。补充任务截图未展示模型名称与设置。",
                      "timeSource":  "用户说明约两分钟完成；未提供计时截图，120 秒仅为该近似时间的结构化记录。",
                      "usageSource":  "用户未提供本次费用、Tokens、API 请求数或额度消耗。",
                      "promptConfirmedByUser":  true,
-                     "promptSource":  "用户确认使用本案例相同的原始提示词。",
-                     "recordSourceLabel":  "用户说明：Opus 5.5 / 中等 / Claude Code / 约 2 分钟",
+                     "promptSource":  "用户确认使用相同的原始提示词；补充任务截图也展示了该提示词。",
+                     "recordSourceLabel":  "任务截图确认提示词和产物；模型、设置及约 2 分钟耗时来自用户说明。",
                      "features":  [
                                       "自动沿路与手动转向",
                                       "巡航速度与暂停",
@@ -146,7 +146,7 @@
                                       "双腿、脚踏与车轮联动"
                                   ],
                      "evidence":  [
-
+                                      "opus-session.png"
                                   ],
                      "preview":  "previews/opus.jpg",
                      "artifactSha256":  "c59a820df5c151c468e6074a4aed0dbb258e41fbb528dfaf00df3064ee8f764a",
@@ -166,7 +166,9 @@
                                                      "url":  "https://fonts.googleapis.com/css2?family=ZCOOL+XiaoWei\u0026family=Noto+Sans+SC:wght@400;600\u0026display=swap"
                                                  }
                                              ],
-                     "runtimeNote":  "原始文件保留外部 Three.js、OrbitControls 和 Google Fonts 链接，独立运行与体验台均需联网加载依赖。"
+                     "runtimeNote":  "原始文件保留外部 Three.js、OrbitControls 和 Google Fonts 链接，独立运行与体验台均需联网加载依赖。",
+                     "sessionSource":  "用户提供的 Claude 对话与 Artifacts 截图，展示原始提示词、生成的“鹧鸪骑行”Artifact，以及骑行、转向、镜头、鸣铃和暂停的操作说明。截图未显示模型名称、推理设置、任务耗时或消耗。",
+                     "harnessSource":  "用户明确确认运行工具保留为 Claude Code。"
                  }
              ],
     "notes":  [
@@ -178,6 +180,7 @@
                   "单次成品观察，不是统一条件下的基准测试。",
                   "混元 4 的 WorkBuddy 界面标注 Hy4 preview、夜间免费，任务耗时 25m12s；用户确认本次使用免费额度。costCny=0 表示本次用户支出，不表示常规 API 定价。",
                   "用户补充 WorkBuddy 任务消耗截图：混元 4 / Hy4 preview 共消耗 ◇92.46，按界面单位记录；本次免费额度的费用说明保留。",
-                  "Opus 5.5：Claude Code，中等，约 2 分钟，均来自用户说明；未提供费用、Tokens、API 请求或额度数据。原文件需要联网加载外部依赖。"
+                  "Opus 5.5：Claude Code，中等，约 2 分钟，均来自用户说明；未提供费用、Tokens、API 请求或额度数据。原文件需要联网加载外部依赖。",
+                  "Opus 补充的 Claude 对话 / Artifacts 任务截图展示原始提示词、Artifact 与操作说明；模型名称、中等设置与约 2 分钟耗时仍来自用户说明。截图未展示消耗。"
               ]
 }
