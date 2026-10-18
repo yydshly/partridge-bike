@@ -29,7 +29,8 @@
   "evidence": [
     "opus-session.png"
   ],
-  "preview": "previews/opus.jpg",
+  "preview": "previews/opus-runtime.jpg",
+  "previewSource": "原始 Opus 网页实际运行截图：侧拍镜头、暂停画面。",
   "artifactSha256": "c59a820df5c151c468e6074a4aed0dbb258e41fbb528dfaf00df3064ee8f764a",
   "artifactBytes": 28107,
   "offline": false,

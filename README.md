@@ -2,7 +2,9 @@
 
 这个仓库汇集同一个「可控制的 3D 鹧鸪骑单车」案例：已有的 MiniMax 完整版，以及 2026 年 10 月 18 日的 Codex、DeepSeek、混元、Opus 四份同题成品与消耗记录。
 
-**[统一入口](https://yydshly.github.io/partridge-bike/)** · **[同题作品](https://yydshly.github.io/partridge-bike/#works)** · **[耗时与消耗](https://yydshly.github.io/partridge-bike/#data)** · **[MiniMax 完整版](https://yydshly.github.io/partridge-bike/minimax/)**
+**[统一入口](https://yydshly.github.io/partridge-bike/)** · **[作品效果](https://yydshly.github.io/partridge-bike/#works)** · **[耗时与消耗](https://yydshly.github.io/partridge-bike/#data)** · **[MiniMax 完整版](https://yydshly.github.io/partridge-bike/minimax/)**
+
+作品区统一展示 **MiniMax、Opus、Codex、DeepSeek、混元五份实际运行效果**，每份均可放大截图或启动原始网页。MiniMax 与 Opus 的效果图重新从原始网页运行时截取；任务与消耗凭据仍单独保留。MiniMax 是历史完整版，不计入四次同题耗时与消耗表。
 
 ## 2026-10-18 同题记录
 

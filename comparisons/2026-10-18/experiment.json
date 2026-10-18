@@ -7,6 +7,24 @@
   "samePromptConfirmedByUser": true,
   "status": "最终成品归档",
   "repositoryUrl": "https://github.com/yydshly/partridge-bike",
+  "showcaseExtras": [
+    {
+      "id": "minimax",
+      "name": "MiniMax",
+      "harness": "历史版本",
+      "historical": true,
+      "short": "六段路线与八首配乐的骑行世界",
+      "preview": "previews/minimax-runtime.jpg",
+      "previewSource": "原始 MiniMax 网页实际运行截图：白天、晴天、锁定跟拍、暂停画面。",
+      "demoUrl": "minimax/",
+      "artifactUrl": "partridge-3d.html",
+      "timeSeconds": null,
+      "timeLabel": "未提供",
+      "costCny": null,
+      "features": ["六段路线", "自动巡航与手动驾驶", "昼夜天气切换", "多种镜头", "八首原配乐与环境音", "导演模式"],
+      "recordSourceLabel": "已有 MiniMax 完整版，具体模型、用时和消耗未提供；不计入四次同题数据。"
+    }
+  ],
   "runs": [
     {
       "id": "codex",
