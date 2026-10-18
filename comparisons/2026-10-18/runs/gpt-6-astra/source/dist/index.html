@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f2f1e9">
+  <meta name="description" content="和一只鹧鸪一起，把日子骑慢一点。可旋转、调速、切换光照的 3D 骑行小剧场。">
+  <title>鹧鸪出游 · A little ride</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='20' fill='%232b5548'/%3E%3Ctext x='12' y='46' font-size='43'%3E🚲%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./style.css">
+  <script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/controls/OrbitControls.js":"./vendor/OrbitControls.js"}}</script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="鹧鸪出游首页"><span class="brand-symbol">p<span>·</span></span><span>小小出游社<small>LITTLE OUTING CLUB</small></span></a>
+    <div class="edition"><span class="tiny-dot"></span> 交互小剧场 <span class="slash">/</span> VOL. 01</div>
+    <button id="capture" class="quiet-button" title="保存当前 3D 场景为图片"><svg viewBox="0 0 24 24"><path d="M4 7h4l2-3h4l2 3h4v13H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>留个纪念</span></button>
+  </header>
+  <main>
+    <section class="intro">
+      <div class="eyebrow"><span>一个悠闲的下午</span><span class="small-line"></span>A LITTLE RIDE</div>
+      <h1>鹧鸪，<br class="mobile-break">出游去。</h1>
+      <p>不赶时间，骑进一点好心情。</p>
+    </section>
+    <section id="stage" class="stage" aria-label="可拖动旋转的鹧鸪骑单车三维场景">
+      <canvas id="scene" tabindex="0" aria-label="3D 骑行场景。拖动旋转，滚轮缩放。空格暂停，方向上下键调速，R 重置。"></canvas>
+      <div id="loading" class="loading"><span class="loading-wheel"></span>小鹧鸪正在准备出发…</div>
+      <div class="scene-caption"><span class="scene-number">01</span><span>草地上的慢时光<small>THE MEADOW LOOP</small></span></div>
+      <div class="scene-tools"><button id="reset-view" title="恢复默认视角" aria-label="恢复默认视角"><svg viewBox="0 0 24 24"><path d="M4 9a8 8 0 1 1 0 6M4 4v5h5"/></svg></button><button id="fullscreen" title="全屏观看" aria-label="全屏观看"><svg viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg></button></div>
+    </section>
+    <aside class="controls" aria-label="骑行控制面板">
+      <div class="panel-heading"><div><span class="eyebrow">RIDE CONTROL</span><h2>今天怎么骑？</h2></div><span class="control-mark">↗</span></div>
+      <div class="ride-info"><span id="status"><i></i>自在骑行中</span><span class="live-label">LIVE</span></div>
+      <div class="speed-readout"><strong id="speed-value">12</strong><span>km/h<small>虚拟时速</small></span><svg class="speed-lines" viewBox="0 0 60 40"><path d="M5 10h45M15 20h35M25 30h25"/></svg></div>
+      <label class="slider-label" for="speed"><span>骑行速度</span><output id="speed-mode">悠闲兜风</output></label>
+      <input id="speed" type="range" min="0" max="30" value="12" step="1" aria-label="骑行速度，公里每小时">
+      <div class="range-labels"><span>慢慢来</span><span>追一阵风</span></div>
+      <button id="play" class="play-button" aria-pressed="true"><svg id="play-icon" viewBox="0 0 20 20"><path d="M7 4v12M13 4v12"/></svg><span>暂停一下</span><kbd>空格</kbd></button>
+      <div class="panel-divider"></div>
+      <label class="field-label">换个角度看风景</label>
+      <div class="segmented" role="group" aria-label="视角"><button data-view="free" class="active" aria-pressed="true">自由</button><button data-view="side" aria-pressed="false">侧面</button><button data-view="front" aria-pressed="false">迎面</button></div>
+      <div class="toggle-row"><label for="orbit">自动环绕<span>慢慢发现每个角落</span></label><input id="orbit" type="checkbox" role="switch"><span class="switch-decoration"></span></div>
+      <div class="panel-divider narrow"></div>
+      <label class="field-label">此刻的光</label>
+      <div class="light-options" role="group" aria-label="场景光照"><button data-light="day" class="active" aria-pressed="true"><span class="sun">☀</span>晴日</button><button data-light="sunset" aria-pressed="false"><span>◒</span>日落</button><button data-light="night" aria-pressed="false"><span>☾</span>月夜</button></div>
+      <div class="panel-bottom"><span>已骑行 <b id="distance">0</b> m</span><button id="reset" title="重置骑行与视角">重新出发 ↻</button></div>
+    </aside>
+    <div class="scene-instructions"><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="6"/><path d="M12 3v6"/></svg><span>拖动旋转 <i>·</i> 滚轮缩放 <i>·</i> 双指开合</span></div>
+  </main>
+  <footer><span>小小的车轮，大大的世界。</span><span>MADE FOR A SLOW AFTERNOON <span class="footer-flower">✳</span></span></footer>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="./app.js"></script>
+  <script>window.addEventListener('error',e=>{if(!window.__rideReady){const n=document.getElementById('loading');n.textContent='场景加载遇到问题，请刷新页面或使用支持 WebGL 的浏览器。';n.classList.add('error')}});</script>
+</body>
+</html>

@@ -1,4 +1,40 @@
-# 鹧鸪骑单车 3D · Partridge on Wheels
+# 鹧鸪骑单车 · 一个案例，多种实现
+
+这个仓库汇集同一个「可控制的 3D 鹧鸪骑单车」案例：已有的 MiniMax 完整版，以及 2026 年 10 月 18 日的 Codex、DeepSeek、混元三份同题成品与消耗记录。
+
+**[统一入口](https://yydshly.github.io/partridge-bike/)** · **[同题作品](https://yydshly.github.io/partridge-bike/#works)** · **[耗时与消耗](https://yydshly.github.io/partridge-bike/#data)** · **[MiniMax 完整版](https://yydshly.github.io/partridge-bike/minimax/)**
+
+## 2026-10-18 同题记录
+
+> 实现一个鹧鸪骑单车动画效果，需要3d展示，可控制。
+
+| 工具 | 模型 / 设置 | 界面任务耗时 | 本次费用 | Tokens | API 请求 |
+|---|---|---:|---|---:|---:|
+| Codex | GPT-6 Astra · 极高 | 20 分 11 秒 | 未提供 | 未提供 | 未提供 |
+| DeepSeek Harness | DeepSeek-V4.1-Flash · 1017 | 45 分 36 秒 | ¥2.24 | 43,141,343 | 161 |
+| WorkBuddy | 混元 4 · Hy4 preview | 25 分 12 秒 | 免费额度（夜间免费） | 未提供 | 未提供 |
+
+用户确认三次使用相同提示词，DeepSeek「近 30 天」账单全部来自本次任务，混元本次使用免费额度。耗时是界面显示的任务时间；环境、工具和迭代过程未统一，展示最终成品，不标注「一次生成」，不作模型整体排名。MiniMax 是已有完整版，未计入本次三模型数据对照。
+
+- [完整对照档案](comparisons/2026-10-18/)：提示词、逐模型记录、原始成品、可用源码和证据截图。
+- [展示页源码](showcase/)：统一入口、按需加载的 3D 体验台、数据表和来源查看。
+- MiniMax 原有源码、音乐、检查和视频仍按下文组织。
+
+### 构建与发布统一入口
+
+在 Windows PowerShell 5.1 中运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\_build-showcase.ps1
+```
+
+完整静态站生成在 `dist/site/`。通过任意静态 HTTP 服务预览该目录（首页需要读取 JSON）；每份独立 HTML 成品仍可下载后离线打开。
+
+`tools/_deploy.ps1` 现在发布整个统一站点到 `gh-pages`；`-NoPush` 仅构建、暂存和核对，不推送。线上根路径是案例入口，`minimax/` 是已有完整版，`partridge-3d.html` 也保留为完整版直达路径；三份同题成品在 `demos/` 下。
+
+---
+
+## MiniMax 完整版 · Partridge on Wheels
 
 一只鹧鸪骑车。Three.js 单文件动画，**11.7 MB，一个 HTML 文件就是全部**——
 不需要联网、不需要装任何东西、不需要起服务器。
@@ -9,7 +45,7 @@
 
 [![鹧鸪骑单车完整演示：MiniMax 生成代码与全部音乐，点击查看视频](docs/demo-cover.jpg)](https://github.com/yydshly/partridge-bike/releases/tag/demo-video-2026-10-17)
 
-**[查看演示视频](https://github.com/yydshly/partridge-bike/releases/tag/demo-video-2026-10-17)** · **[下载 1080p MP4 原片](https://github.com/yydshly/partridge-bike/releases/download/demo-video-2026-10-17/partridge-minimax-full-1080p.mp4)** · **[在线试玩](https://yydshly.github.io/partridge-bike/)**
+**[查看演示视频](https://github.com/yydshly/partridge-bike/releases/tag/demo-video-2026-10-17)** · **[下载 1080p MP4 原片](https://github.com/yydshly/partridge-bike/releases/download/demo-video-2026-10-17/partridge-minimax-full-1080p.mp4)** · **[在线试玩](https://yydshly.github.io/partridge-bike/minimax/)**
 
 2 分 16 秒 · 1920 × 1080 · 中英双语说明 · 含音乐与环境音。
 
@@ -21,7 +57,7 @@
 
 ## ▶ 在线玩
 
-**https://yydshly.github.io/partridge-bike/**
+**https://yydshly.github.io/partridge-bike/minimax/**
 
 手机上也能开。**要点一下画面才会动**——浏览器要求先有真实手势，
 否则不放声音也不起步。手机上面板会自动改成窄屏排版，24 个按钮每个都 ≥42px 高；
@@ -97,7 +133,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\_build.ps1
 partridge-bike\
   _paths.ps1        ← 全仓库路径的唯一出处
   README.md  AGENTS.md
-  src\              唯一可编辑源 _app3d.html + 曲目表 _bgm-meta.json
+  showcase/         统一入口的 HTML、CSS 和 JavaScript
+  comparisons/      按日期保存的同题作品、记录与证据
+  src\              MiniMax 唯一可编辑源 _app3d.html + 曲目表 _bgm-meta.json
   assets\
     bgm\            8 首 MP3（8.2 MB，**不可再生**）
     vendor\         three149.min.js
@@ -111,7 +149,7 @@ partridge-bike\
   .github\workflows\  verify.yml（CI：Windows + PowerShell 5.1，跑全 20 步）
 ```
 
-根目录只剩 5 个文件 —— 「哪个是源、哪个是产物」不用再靠记。
+入口源码、各次记录与 MiniMax 源码分目录保存，生成产物统一放在 dist/。
 
 `dist\` 由 `_paths.ps1` 自动创建，跑任何脚本都不用先手动建它。
 
@@ -168,7 +206,7 @@ partridge-bike\
 | `AGENTS.md` | 项目记忆与方法论（踩过的坑都在里面） |
 | `.gitignore` | 排除 `dist\`（= 14 个产物：1 成品 + 3 探针 + 9 回归页 + 1 诊断页） |
 
-**路径只有一处出处。** 32 个脚本开头都是这三行，从 `$PSScriptRoot` 往上找 `_paths.ps1`——
+**路径只有一处出处。** PowerShell 工具脚本开头使用这三行，从 `$PSScriptRoot` 往上找 `_paths.ps1`——
 
 ```powershell
 $p = $PSScriptRoot; while (-not (Test-Path (Join-Path $p '_paths.ps1'))) { $p = Split-Path $p -Parent }
@@ -177,7 +215,7 @@ if (-not $p) { throw "找不到 _paths.ps1（从 $PSScriptRoot 往上找）" }
 ```
 
 所以**搬目录、改文件名、挪产物位置，只改 `_paths.ps1` 里的目录定义**，
-其余文件一个字都不用动。`_paths.ps1` 末尾会自查 52 个必须存在的路径，
+其余文件一个字都不用动。`_paths.ps1` 末尾会自查必须存在的路径，
 搬错了在第一秒就炸，而不是等到某个 harness 静默跑空、而所有检查照样全绿。
 
 **`.ps1` 必须是 UTF-8 with BOM。** 少了 BOM，PowerShell 5.1 会按 ANSI

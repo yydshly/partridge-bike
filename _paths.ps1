@@ -44,6 +44,12 @@ $DIR_SELF   = "$DIR_CHECKS\self"      # 检查器自己的反查
 $DIR_OUT    = "$ROOT\dist"            # 生成页（回归 harness、诊断页、实拍页）
 $DIR_DIST   = "$ROOT\dist"            # 构建产物 partridge-3d.html
 
+# 同一案例的展示入口与按日期保存的同题档案
+$DIR_SHOWCASE = "$ROOT\showcase"
+$DIR_COMPARISONS = "$ROOT\comparisons"
+$DIR_CASE_LATEST = "$DIR_COMPARISONS\2026-10-18"
+$DIR_SITEBUILD = "$DIR_DIST\site"
+
 # dist/ 里**全部是生成的**，所以整目录进 .gitignore。
 # 在这里建（而不是让每个生成器各自建）的好处是：搬目录时它跟着走，
 # 而且任何一个脚本单独跑都不会因为「dist 不存在」而炸。
@@ -67,6 +73,7 @@ $GITIGNORE = "$ROOT\.gitignore"
 $GITATTRS  = "$ROOT\.gitattributes"
 
 # ── tools/：一条命令跑完一件事的那些 ──────────────────────────
+$S_BUILD_SHOWCASE = "$DIR_TOOLS\_build-showcase.ps1"
 $S_BUILD     = "$DIR_TOOLS\_build.ps1"
 $S_DEPLOY    = "$DIR_TOOLS\_deploy.ps1"
 $S_SERVE     = "$DIR_TOOLS\_serve.ps1"
@@ -213,6 +220,7 @@ if ($outProbeGone.Count -gt 0) {
 #  往里加一行，它就不会被这条自检覆盖。所以清单里每一项都必须同时
 #  出现在上面的赋值里（_pathcheck.ps1 会反过来验这两份对不对得上）。
 $mustExist = @(
+  $S_BUILD_SHOWCASE, $DIR_SHOWCASE, $DIR_CASE_LATEST,
   $APP, $BGM_META, $BGM_SHA, $THREE_LIB, $README, $AGENTS, $SCREENSHOT, $GITIGNORE, $GITATTRS,
   $S_BUILD, $S_DEPLOY, $S_SERVE, $S_SWAP, $S_REFRACTOR, $S_RUNPAGES,
   $S_CHECKALL, $S_SYNTAX, $S_FREEVAR, $S_SCOPE, $S_LINT, $S_PAGES, $S_PATHCHECK, $S_DOCCHECK, $S_CICHECK,

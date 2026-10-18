@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "partridge-bike",
+  "title": "鹧鸪骑单车",
+  "date": "2026-10-18",
+  "prompt": "实现一个鹧鸪骑单车动画效果，需要3d展示，可控制。",
+  "samePromptConfirmedByUser": true,
+  "status": "最终成品归档",
+  "repositoryUrl": "https://github.com/yydshly/partridge-bike",
+  "runs": [
+    {
+      "id": "codex",
+      "directory": "gpt-6-astra"
+    },
+    {
+      "id": "deepseek",
+      "directory": "deepseek-v4-1-flash"
+    },
+    {
+      "id": "hunyuan",
+      "directory": "hunyuan-4"
+    }
+  ],
+  "notes": [
+    "三次测试使用同一条提示词，由用户确认。",
+    "展示各自最终成品，未控制运行环境、工具、迭代次数与中间修复过程；不标注一次生成。",
+    "耗时来自任务界面，不等同于纯模型推理延迟；Codex 任务包含检查和部署等环节。",
+    "未提供的数据保留为 null，网页显示未提供，不按零处理。",
+    "DeepSeek 账单窗口为近 30 天，用户确认其全部消耗来自本次任务。",
+    "单次成品观察，不是统一条件下的基准测试。",
+    "混元 4 的 WorkBuddy 界面标注 Hy4 preview、夜间免费，任务耗时 25m12s；用户确认本次使用免费额度。costCny=0 表示本次用户支出，不表示常规 API 定价。"
+  ]
+}

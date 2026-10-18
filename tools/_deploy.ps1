@@ -13,16 +13,16 @@ if (-not $Dir) { $Dir = $ROOT }
 # 为什么用**独立的 gh-pages 分支**，而不是把 11.7 MB 的产物提交进 main：
 # 产物是从 252 KB 的 _app3d.html 拼出来的，改一行源码就产生一个 11.7 MB 的
 # 新 blob。几轮改动后 .git 就会膨胀到几百 MB，而换不回任何信息。
-# main 保持只存源，gh-pages 只存一个 index.html —— 各自都干净。
+# main 保持只存源，gh-pages 存统一入口、各版成品与展示数据 —— 各自都干净。
 #
 # 用**独立的临时仓库**推那个分支，而不是在主仓库里 checkout --orphan：
 # 后者会把工作区里的 55 个源文件变成未跟踪，稍不注意就误提交或误删。
 # 临时仓库完全碰不到主工作区。
 $ErrorActionPreference = 'Stop'
-$stage = Join-Path $env:TEMP ('pkb-ghp-' + $Repo.Replace('/','-'))
+$stage = Join-Path $env:TEMP ('pkb-ghp-' + $Repo.Replace('/','-') + '-' + [guid]::NewGuid().ToString('N'))
 
 Write-Output '=== 1/5 构建 ==='
-& powershell -NoProfile -ExecutionPolicy Bypass -File $S_BUILD
+& powershell -NoProfile -ExecutionPolicy Bypass -File $S_BUILD_SHOWCASE
 if ($LASTEXITCODE -ne 0) { throw "构建失败（退出码 $LASTEXITCODE）" }
 # 产物路径直接用 $PRODUCT（来自 _paths.ps1），不再自己拼 $Dir ——
 # $Dir 只是发布脚本的入口参数，拿它当根目录就等于路径又有了第二个出处。
@@ -36,9 +36,11 @@ if ($size -lt 5MB) { throw "产物只有 $size 字节，八成没构建对，先
 Write-Output '=== 2/5 准备暂存目录 ==='
 # 用 mavis-trash 而不是 Remove-Item -Recurse -Force —— 和本项目其他脚本一致，
 # 万一路径变量写错，那是可恢复的删除而不是永久丢失。
-if (Test-Path $stage) { mavis-trash $stage }
+# 每次使用独立暂存目录，保留可检查的发布快照。
 $null = New-Item -ItemType Directory -Path $stage -Force
-Copy-Item $PRODUCT (Join-Path $stage 'index.html') -Force
+Copy-Item (Join-Path $DIR_SITEBUILD '*') $stage -Recurse -Force
+Copy-Item (Join-Path $DIR_SITEBUILD '.nojekyll') $stage -Force
+$size = (Get-Item (Join-Path $stage 'index.html')).Length
 
 # ⚠️ 必须**不带 BOM**。PowerShell 5.1 的 `Set-Content -Encoding UTF8` 会写 BOM，
 #    而 git 不一定认得出来，写进去的规则可能悄悄失效。
@@ -57,7 +59,7 @@ try {
   #    不这么做，入库的是换行转换过的版本，和磁盘字节不一致（2026-09-30 踩过）。
   git add --renormalize .
   git -c user.name='yydshly' -c user.email='288515785+yydshly@users.noreply.github.com' `
-      commit -q -m "部署：鹧鸪骑单车 3D 成品（单文件 $([math]::Round($size/1MB,1)) MB）`n`n由 _build.ps1 的产物原样复制。完全自包含：three.js 与 8 首配乐都已内联，`n运行时零外部请求。字节与构建产物保持一致。"
+      commit -q -m "部署：鹧鸪骑单车统一入口与同题作品档案`n`n保留 MiniMax 完整版，并发布三模型交互作品、记录与来源截图。"
 
   # 验：入库的 blob 必须等于磁盘上的字节
   $disk = git hash-object --no-filters -- index.html
