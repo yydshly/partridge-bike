@@ -13,12 +13,12 @@
   "costCny": null,
   "tokens": null,
   "requests": null,
-  "modelSource": "用户说明：Opus 5.5，中等，运行工具为 Claude Code。",
+  "modelSource": "用户说明：Opus 5.5，中等，运行工具为 Claude Code。补充任务截图未展示模型名称与设置。",
   "timeSource": "用户说明约两分钟完成；未提供计时截图，120 秒仅为该近似时间的结构化记录。",
   "usageSource": "用户未提供本次费用、Tokens、API 请求数或额度消耗。",
   "promptConfirmedByUser": true,
-  "promptSource": "用户确认使用本案例相同的原始提示词。",
-  "recordSourceLabel": "用户说明：Opus 5.5 / 中等 / Claude Code / 约 2 分钟",
+  "promptSource": "用户确认使用相同的原始提示词；补充任务截图也展示了该提示词。",
+  "recordSourceLabel": "任务截图确认提示词和产物；模型、设置及约 2 分钟耗时来自用户说明。",
   "features": [
     "自动沿路与手动转向",
     "巡航速度与暂停",
@@ -26,7 +26,9 @@
     "鸣铃音效与气泡",
     "双腿、脚踏与车轮联动"
   ],
-  "evidence": [],
+  "evidence": [
+    "opus-session.png"
+  ],
   "preview": "previews/opus.jpg",
   "artifactSha256": "c59a820df5c151c468e6074a4aed0dbb258e41fbb528dfaf00df3064ee8f764a",
   "artifactBytes": 28107,
@@ -45,5 +47,7 @@
       "url": "https://fonts.googleapis.com/css2?family=ZCOOL+XiaoWei&family=Noto+Sans+SC:wght@400;600&display=swap"
     }
   ],
-  "runtimeNote": "原始文件保留外部 Three.js、OrbitControls 和 Google Fonts 链接，独立运行与体验台均需联网加载依赖。"
+  "runtimeNote": "原始文件保留外部 Three.js、OrbitControls 和 Google Fonts 链接，独立运行与体验台均需联网加载依赖。",
+  "sessionSource": "用户提供的 Claude 对话与 Artifacts 截图，展示原始提示词、生成的“鹧鸪骑行”Artifact，以及骑行、转向、镜头、鸣铃和暂停的操作说明。截图未显示模型名称、推理设置、任务耗时或消耗。",
+  "harnessSource": "用户明确确认运行工具保留为 Claude Code。"
 }

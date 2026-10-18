@@ -15,6 +15,8 @@
 | WorkBuddy | 混元 4 · Hy4 preview | 25 分 12 秒 | 免费额度（夜间免费） | 未提供 | 未提供 |
 | Claude Code | Opus 5.5 · 中等 | 约 2 分钟（用户说明） | 未提供 | 未提供 | 未提供 |
 
+[Opus 任务截图](comparisons/2026-10-18/evidence/opus-session.png)展示相同提示词、生成的 Artifact 和操作说明；模型、中等设置与约 2 分钟耗时来自用户说明，截图未显示这些数值或消耗。
+
 混元的 WorkBuddy 任务界面显示 **共消耗 ◇92.46**，按界面单位单独记录，截图见 [消耗依据](comparisons/2026-10-18/evidence/hunyuan-usage.png)。本次使用免费额度；截图未注明菱形单位的正式名称与人民币换算方式。
 
 DeepSeek 更新的任务截图还显示：261 tok/s、缓存命中率 99.7%、43.1M tok（近似值）。速率与缓存命中率按界面原值记录；精确 Tokens、费用与 API 请求数继续采用账单。
