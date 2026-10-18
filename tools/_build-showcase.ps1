@@ -38,6 +38,8 @@ $csvRows = foreach ($record in $runRecords) {
   [pscustomobject][ordered]@{
     model = $record.name; setting = $record.setting; harness = $record.harness
     time_seconds = $record.timeSeconds; cost_cny = $record.costCny
+    time_is_approximate = [bool]$record.timeIsApproximate
+    time_source = $record.timeSource
     tokens = $record.tokens; api_requests = $record.requests
     cost_basis = $(if ($record.costBasis) { $record.costBasis } elseif ($null -eq $record.costCny) { 'not_provided' } else { 'user_bill' })
     cost_label = $(if ($record.costLabel) { $record.costLabel } elseif ($null -eq $record.costCny) { '未提供' } else { '账单支出' })
@@ -68,4 +70,4 @@ $null = New-Item -ItemType Directory -Path $downloadsRoot -Force
 Compress-Archive -LiteralPath $DIR_CASE_LATEST -DestinationPath (Join-Path $downloadsRoot 'partridge-bike-archive.zip') -CompressionLevel Optimal -Force
 [IO.File]::WriteAllText((Join-Path $DIR_SITEBUILD '.nojekyll'), '', $utf8)
 Write-Output "统一站点已构建：$DIR_SITEBUILD"
-Write-Output '已验证：三份同题成品与 MiniMax 发布副本均保持原始字节。'
+Write-Output '已验证：所有同题成品与 MiniMax 发布副本均保持原始字节。'

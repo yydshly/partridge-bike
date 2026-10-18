@@ -1,6 +1,6 @@
 # 鹧鸪骑单车 · 一个案例，多种实现
 
-这个仓库汇集同一个「可控制的 3D 鹧鸪骑单车」案例：已有的 MiniMax 完整版，以及 2026 年 10 月 18 日的 Codex、DeepSeek、混元三份同题成品与消耗记录。
+这个仓库汇集同一个「可控制的 3D 鹧鸪骑单车」案例：已有的 MiniMax 完整版，以及 2026 年 10 月 18 日的 Codex、DeepSeek、混元、Opus 四份同题成品与消耗记录。
 
 **[统一入口](https://yydshly.github.io/partridge-bike/)** · **[同题作品](https://yydshly.github.io/partridge-bike/#works)** · **[耗时与消耗](https://yydshly.github.io/partridge-bike/#data)** · **[MiniMax 完整版](https://yydshly.github.io/partridge-bike/minimax/)**
 
@@ -8,17 +8,18 @@
 
 > 实现一个鹧鸪骑单车动画效果，需要3d展示，可控制。
 
-| 工具 | 模型 / 设置 | 界面任务耗时 | 本次费用 | Tokens | API 请求 |
+| 工具 | 模型 / 设置 | 任务耗时 | 本次费用 | Tokens | API 请求 |
 |---|---|---:|---|---:|---:|
 | Codex | GPT-6 Astra · 极高 | 20 分 11 秒 | 未提供 | 未提供 | 未提供 |
 | DeepSeek Harness | DeepSeek-V4.1-Flash · 1017 | 45 分 36 秒 | ¥2.24 | 43,141,343 | 161 |
 | WorkBuddy | 混元 4 · Hy4 preview | 25 分 12 秒 | 免费额度（夜间免费） | 未提供 | 未提供 |
+| Claude Code | Opus 5.5 · 中等 | 约 2 分钟（用户说明） | 未提供 | 未提供 | 未提供 |
 
 混元的 WorkBuddy 任务界面显示 **共消耗 ◇92.46**，按界面单位单独记录，截图见 [消耗依据](comparisons/2026-10-18/evidence/hunyuan-usage.png)。本次使用免费额度；截图未注明菱形单位的正式名称与人民币换算方式。
 
 DeepSeek 更新的任务截图还显示：261 tok/s、缓存命中率 99.7%、43.1M tok（近似值）。速率与缓存命中率按界面原值记录；精确 Tokens、费用与 API 请求数继续采用账单。
 
-用户确认三次使用相同提示词，DeepSeek「近 30 天」账单全部来自本次任务，混元本次使用免费额度。耗时是界面显示的任务时间；环境、工具和迭代过程未统一，展示最终成品，不标注「一次生成」，不作模型整体排名。MiniMax 是已有完整版，未计入本次三模型数据对照。
+用户确认四次使用相同提示词，DeepSeek「近 30 天」账单全部来自本次任务，混元本次使用免费额度。前三份耗时是界面显示的任务时间，Opus 的约 2 分钟来自用户说明；环境、工具和迭代过程未统一，展示最终成品，不标注「一次生成」，不作模型整体排名。MiniMax 是已有完整版，未计入本次四模型数据对照。
 
 - [完整对照档案](comparisons/2026-10-18/)：提示词、逐模型记录、原始成品、可用源码和证据截图。
 - [展示页源码](showcase/)：统一入口、按需加载的 3D 体验台、数据表和来源查看。
@@ -32,9 +33,9 @@ DeepSeek 更新的任务截图还显示：261 tok/s、缓存命中率 99.7%、43
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\_build-showcase.ps1
 ```
 
-完整静态站生成在 `dist/site/`。通过任意静态 HTTP 服务预览该目录（首页需要读取 JSON）；每份独立 HTML 成品仍可下载后离线打开。
+完整静态站生成在 `dist/site/`。通过任意静态 HTTP 服务预览该目录（首页需要读取 JSON）；前三份自包含 HTML 成品可下载后离线打开；Opus 原文件需要联网加载依赖。
 
-`tools/_deploy.ps1` 现在发布整个统一站点到 `gh-pages`；`-NoPush` 仅构建、暂存和核对，不推送。线上根路径是案例入口，`minimax/` 是已有完整版，`partridge-3d.html` 也保留为完整版直达路径；三份同题成品在 `demos/` 下。
+`tools/_deploy.ps1` 现在发布整个统一站点到 `gh-pages`；`-NoPush` 仅构建、暂存和核对，不推送。线上根路径是案例入口，`minimax/` 是已有完整版，`partridge-3d.html` 也保留为完整版直达路径；四份同题成品在 `demos/` 下。
 
 ---
 

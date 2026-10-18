@@ -2,7 +2,7 @@
 
 ## 案例入口与归档（2026-10-18）
 
-- 本仓库现在是同一鹧鸪案例的统一入口：`showcase/` 保存展示页，`comparisons/2026-10-18/` 保存三次同题任务的记录、截图、成品与可用源码。
+- 本仓库现在是同一鹧鸪案例的统一入口：`showcase/` 保存展示页，`comparisons/2026-10-18/` 保存同题任务的记录、截图、成品与可用源码。
 - 下文关于唯一源、构建、场景与音乐的约定适用于已有 MiniMax 完整版。展示页可独立编辑；归档的原始成品不修改，文件校验值在各 `record.json` 中。
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\_build-showcase.ps1` 构建整个站点到 `dist/site/`，内部调用原 MiniMax 构建。`tools/_deploy.ps1` 发布统一站点，根路径是入口，`minimax/` 保留完整版。
 - `.gitignore` 只排除仓库根目录的 `/dist/`，归档中名称为 dist 的原始源码目录必须保留。
