@@ -1,0 +1,115 @@
+{
+    "schemaVersion":  1,
+    "id":  "partridge-bike",
+    "title":  "鹧鸪骑单车",
+    "date":  "2026-10-18",
+    "prompt":  "实现一个鹧鸪骑单车动画效果，需要3d展示，可控制。",
+    "samePromptConfirmedByUser":  true,
+    "status":  "最终成品归档",
+    "repositoryUrl":  "https://github.com/yydshly/partridge-bike",
+    "runs":  [
+                 {
+                     "id":  "codex",
+                     "directory":  "gpt-6-astra",
+                     "name":  "GPT-6 Astra",
+                     "setting":  "极高",
+                     "harness":  "Codex",
+                     "short":  "一座温柔的骑行小剧场",
+                     "description":  "奶油色微缩草地、立体羽毛与单车细节，配上完整的骑行控制面板。",
+                     "engine":  "Three.js 0.170.0",
+                     "timeSeconds":  1211,
+                     "timeLabel":  "20 分 11 秒",
+                     "costCny":  null,
+                     "tokens":  null,
+                     "requests":  null,
+                     "modelSource":  "用户提供的 Codex 界面截图：GPT-6 Astra，极高。",
+                     "timeSource":  "界面显示任务用时；包含实现、检查和部署等工作，不等同于纯模型生成延迟。",
+                     "usageSource":  "用户未提供本次费用、Tokens 或 API 请求数。",
+                     "features":  [
+                                      "拖拽旋转与缩放",
+                                      "速度、暂停与视角切换",
+                                      "昼夜切换与自动环绕",
+                                      "双腿、脚踏与车轮联动",
+                                      "截图与全屏"
+                                  ],
+                     "evidence":  [
+                                      "codex-session.png"
+                                  ],
+                     "artifactSha256":  "3da5a6fb87b17a823adc2873cffe1edad02efa4a80e8e37b886a4abbbb86d18b",
+                     "artifactBytes":  1841513
+                 },
+                 {
+                     "id":  "deepseek",
+                     "directory":  "deepseek-v4-1-flash",
+                     "name":  "DeepSeek-V4.1-Flash",
+                     "setting":  "界面标记 1017",
+                     "harness":  "DeepSeek Harness",
+                     "short":  "驶进低多边形的乡间",
+                     "description":  "自己实现的 WebGL 小引擎，将花篮、群山与田野放进可转向、可跳跃的骑行场景。",
+                     "engine":  "自写 WebGL 引擎",
+                     "timeSeconds":  2736,
+                     "timeLabel":  "45 分 36 秒",
+                     "costCny":  2.24,
+                     "tokens":  43141343,
+                     "requests":  161,
+                     "modelSource":  "用户提供的任务界面截图：DeepSeek-V4.1-Flash，界面标记 1017。",
+                     "timeSource":  "任务界面显示的完成耗时；测试环境和过程未统一。",
+                     "usageSource":  "账单截图范围为近 30 天；用户确认 ¥2.24、161 次 API 请求、43,141,343 Tokens 全部来自本次任务。Tokens 为账单合计，未提供输入、输出或缓存拆分。",
+                     "features":  [
+                                      "拖拽旋转与缩放",
+                                      "速度、暂停与视角切换",
+                                      "WASD 转向与空格跳跃",
+                                      "昼夜切换与三套配色",
+                                      "双腿与脚踏联动"
+                                  ],
+                     "evidence":  [
+                                      "deepseek-session.png",
+                                      "deepseek-usage.png"
+                                  ],
+                     "artifactSha256":  "07c562e697cf312e94f69b3425f4e26682a439a9ec472756d9eb2aaa96e9cfb0",
+                     "artifactBytes":  114689
+                 },
+                 {
+                     "id":  "hunyuan",
+                     "directory":  "hunyuan-4",
+                     "name":  "混元 4",
+                     "setting":  "Hy4 preview",
+                     "harness":  "WorkBuddy",
+                     "short":  "带点杂技感的公路骑行",
+                     "description":  "斑纹鹧鸪穿过流动的场景，可以抬起前轮、扇动翅膀，再按一下车铃。",
+                     "engine":  "Three.js r160",
+                     "timeSeconds":  1512,
+                     "timeLabel":  "25 分 12 秒",
+                     "costCny":  0,
+                     "tokens":  null,
+                     "requests":  null,
+                     "modelSource":  "用户提供的 WorkBuddy 截图选中 Hy4 preview；用户将该模型称为混元 4。",
+                     "timeSource":  "用户提供的 WorkBuddy 任务界面显示已完成 25m12s，即 25 分 12 秒。",
+                     "usageSource":  "用户确认本次使用 WorkBuddy 免费额度；截图中 Hy4 preview 标注夜间免费。costCny=0 表示本次用户支出为零，不表示模型常规 API 定价为零；Tokens、请求次数与额度扣减数量未提供。",
+                     "features":  [
+                                      "拖拽旋转与缩放",
+                                      "速度、暂停与多视角",
+                                      "抬前轮与扇翅动作",
+                                      "车铃音效",
+                                      "日间、黄昏与夜间"
+                                  ],
+                     "evidence":  [
+                                      "hunyuan-session.png"
+                                  ],
+                     "artifactSha256":  "8a6da4c5ee84982f64829515b615fea0d0eea229ff52e114507b170bf35e1048",
+                     "artifactBytes":  751476,
+                     "costBasis":  "free_quota",
+                     "costLabel":  "免费额度",
+                     "costNote":  "WorkBuddy 夜间免费额度；用户确认本次免费。"
+                 }
+             ],
+    "notes":  [
+                  "三次测试使用同一条提示词，由用户确认。",
+                  "展示各自最终成品，未控制运行环境、工具、迭代次数与中间修复过程；不标注一次生成。",
+                  "耗时来自任务界面，不等同于纯模型推理延迟；Codex 任务包含检查和部署等环节。",
+                  "未提供的数据保留为 null，网页显示未提供，不按零处理。",
+                  "DeepSeek 账单窗口为近 30 天，用户确认其全部消耗来自本次任务。",
+                  "单次成品观察，不是统一条件下的基准测试。",
+                  "混元 4 的 WorkBuddy 界面标注 Hy4 preview、夜间免费，任务耗时 25m12s；用户确认本次使用免费额度。costCny=0 表示本次用户支出，不表示常规 API 定价。"
+              ]
+}
