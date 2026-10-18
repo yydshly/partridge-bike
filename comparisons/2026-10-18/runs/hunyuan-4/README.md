@@ -6,6 +6,7 @@
 - 模型标注：混元 4 · Hy4 preview
 - 界面任务耗时：25 分 12 秒
 - 费用：免费额度（WorkBuddy 夜间免费；本次用户支出 ¥0）
+- 界面共消耗：◇ 92.46（WorkBuddy 界面单位）
 - Tokens：未提供
 - API 请求：未提供
 - 渲染：Three.js r160
@@ -26,9 +27,12 @@
 
 用户提供的 WorkBuddy 任务界面显示已完成 25m12s，即 25 分 12 秒。
 
-用户确认本次使用 WorkBuddy 免费额度；截图中 Hy4 preview 标注夜间免费。costCny=0 表示本次用户支出为零，不表示模型常规 API 定价为零；Tokens、请求次数与额度扣减数量未提供。
+用户确认本次使用 WorkBuddy 免费额度；任务截图中 Hy4 preview 标注夜间免费。补充截图显示本任务共消耗 ◇92.46，按 WorkBuddy 界面单位单独记录。costCny=0 记录用户此前确认的本次支出；Tokens 与 API 请求次数未提供。
+
+用户补充的 WorkBuddy 任务消耗截图显示“共消耗 ◇92.46”，同一行模型为 Hy4 preview。截图未注明该符号单位的正式名称或人民币换算方式。
 
 - [WorkBuddy 任务、模型与免费额度截图](../../evidence/hunyuan-session.png)
+- [WorkBuddy 共消耗 ◇92.46 截图](../../evidence/hunyuan-usage.png)
 
 
 

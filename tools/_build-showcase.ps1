@@ -47,6 +47,10 @@ $csvRows = foreach ($record in $runRecords) {
     interface_rounds = $record.interfaceStats.rounds
     interface_steps = $record.interfaceStats.steps
     interface_stats_source = $record.interfaceStats.source
+    quota_usage_amount = $record.quotaUsage.amount
+    quota_usage_label = $record.quotaUsage.displayLabel
+    quota_usage_unit = $record.quotaUsage.unitLabel
+    quota_usage_source = $record.quotaUsage.source
     usage_source = $record.usageSource
   }
 }

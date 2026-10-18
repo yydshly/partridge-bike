@@ -14,7 +14,7 @@
   "requests": null,
   "modelSource": "用户提供的 WorkBuddy 截图选中 Hy4 preview；用户将该模型称为混元 4。",
   "timeSource": "用户提供的 WorkBuddy 任务界面显示已完成 25m12s，即 25 分 12 秒。",
-  "usageSource": "用户确认本次使用 WorkBuddy 免费额度；截图中 Hy4 preview 标注夜间免费。costCny=0 表示本次用户支出为零，不表示模型常规 API 定价为零；Tokens、请求次数与额度扣减数量未提供。",
+  "usageSource": "用户确认本次使用 WorkBuddy 免费额度；任务截图中 Hy4 preview 标注夜间免费。补充截图显示本任务共消耗 ◇92.46，按 WorkBuddy 界面单位单独记录。costCny=0 记录用户此前确认的本次支出；Tokens 与 API 请求次数未提供。",
   "features": [
     "拖拽旋转与缩放",
     "速度、暂停与多视角",
@@ -23,11 +23,18 @@
     "日间、黄昏与夜间"
   ],
   "evidence": [
-    "hunyuan-session.png"
+    "hunyuan-session.png",
+    "hunyuan-usage.png"
   ],
   "artifactSha256": "8a6da4c5ee84982f64829515b615fea0d0eea229ff52e114507b170bf35e1048",
   "artifactBytes": 751476,
   "costBasis": "free_quota",
   "costLabel": "免费额度",
-  "costNote": "WorkBuddy 夜间免费额度；用户确认本次免费。"
+  "costNote": "WorkBuddy 夜间免费额度；用户确认本次免费。界面共消耗 ◇92.46。",
+  "quotaUsage": {
+    "amount": 92.46,
+    "displayLabel": "◇ 92.46",
+    "unitLabel": "WorkBuddy 界面菱形单位",
+    "source": "用户补充的 WorkBuddy 任务消耗截图显示“共消耗 ◇92.46”，同一行模型为 Hy4 preview。截图未注明该符号单位的正式名称或人民币换算方式。"
+  }
 }
