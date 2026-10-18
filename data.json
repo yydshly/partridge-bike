@@ -116,16 +116,68 @@
                                         "unitLabel":  "WorkBuddy 界面菱形单位",
                                         "source":  "用户补充的 WorkBuddy 任务消耗截图显示“共消耗 ◇92.46”，同一行模型为 Hy4 preview。截图未注明该符号单位的正式名称或人民币换算方式。"
                                     }
+                 },
+                 {
+                     "id":  "opus",
+                     "directory":  "opus-5-5",
+                     "name":  "Opus 5.5",
+                     "setting":  "中等",
+                     "harness":  "Claude Code",
+                     "short":  "绕着池塘的一圈乡间骑行",
+                     "description":  "斑纹鹧鸪骑着青绿色单车绕行池塘，可自动沿路或手动转向，切换跟随、侧拍和环绕镜头。",
+                     "engine":  "Three.js 0.128.0",
+                     "timeSeconds":  120,
+                     "timeIsApproximate":  true,
+                     "timeLabel":  "约 2 分钟",
+                     "costCny":  null,
+                     "tokens":  null,
+                     "requests":  null,
+                     "modelSource":  "用户说明：Opus 5.5，中等，运行工具为 Claude Code。",
+                     "timeSource":  "用户说明约两分钟完成；未提供计时截图，120 秒仅为该近似时间的结构化记录。",
+                     "usageSource":  "用户未提供本次费用、Tokens、API 请求数或额度消耗。",
+                     "promptConfirmedByUser":  true,
+                     "promptSource":  "用户确认使用本案例相同的原始提示词。",
+                     "recordSourceLabel":  "用户说明：Opus 5.5 / 中等 / Claude Code / 约 2 分钟",
+                     "features":  [
+                                      "自动沿路与手动转向",
+                                      "巡航速度与暂停",
+                                      "跟随、侧拍和环绕镜头",
+                                      "鸣铃音效与气泡",
+                                      "双腿、脚踏与车轮联动"
+                                  ],
+                     "evidence":  [
+
+                                  ],
+                     "preview":  "previews/opus.jpg",
+                     "artifactSha256":  "c59a820df5c151c468e6074a4aed0dbb258e41fbb528dfaf00df3064ee8f764a",
+                     "artifactBytes":  28107,
+                     "offline":  false,
+                     "runtimeDependencies":  [
+                                                 {
+                                                     "name":  "Three.js r128",
+                                                     "url":  "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+                                                 },
+                                                 {
+                                                     "name":  "OrbitControls",
+                                                     "url":  "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"
+                                                 },
+                                                 {
+                                                     "name":  "Google Fonts",
+                                                     "url":  "https://fonts.googleapis.com/css2?family=ZCOOL+XiaoWei\u0026family=Noto+Sans+SC:wght@400;600\u0026display=swap"
+                                                 }
+                                             ],
+                     "runtimeNote":  "原始文件保留外部 Three.js、OrbitControls 和 Google Fonts 链接，独立运行与体验台均需联网加载依赖。"
                  }
              ],
     "notes":  [
-                  "三次测试使用同一条提示词，由用户确认。",
+                  "四次测试使用同一条提示词，由用户确认。",
                   "展示各自最终成品，未控制运行环境、工具、迭代次数与中间修复过程；不标注一次生成。",
-                  "耗时来自任务界面，不等同于纯模型推理延迟；Codex 任务包含检查和部署等环节。",
+                  "Codex、DeepSeek、混元耗时来自任务界面；Opus 的约 2 分钟来自用户说明。任务耗时不等同于纯模型推理延迟。",
                   "未提供的数据保留为 null，网页显示未提供，不按零处理。",
                   "DeepSeek 账单窗口为近 30 天，用户确认其全部消耗来自本次任务。",
                   "单次成品观察，不是统一条件下的基准测试。",
                   "混元 4 的 WorkBuddy 界面标注 Hy4 preview、夜间免费，任务耗时 25m12s；用户确认本次使用免费额度。costCny=0 表示本次用户支出，不表示常规 API 定价。",
-                  "用户补充 WorkBuddy 任务消耗截图：混元 4 / Hy4 preview 共消耗 ◇92.46，按界面单位记录；本次免费额度的费用说明保留。"
+                  "用户补充 WorkBuddy 任务消耗截图：混元 4 / Hy4 preview 共消耗 ◇92.46，按界面单位记录；本次免费额度的费用说明保留。",
+                  "Opus 5.5：Claude Code，中等，约 2 分钟，均来自用户说明；未提供费用、Tokens、API 请求或额度数据。原文件需要联网加载外部依赖。"
               ]
 }
