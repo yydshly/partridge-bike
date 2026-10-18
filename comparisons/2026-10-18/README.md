@@ -14,6 +14,8 @@
 | [DeepSeek-V4.1-Flash](runs/deepseek-v4-1-flash/) | DeepSeek Harness | 45 分 36 秒 | ¥2.24 | 43,141,343 | 161 |
 | [混元 4 · Hy4 preview](runs/hunyuan-4/) | WorkBuddy | 25 分 12 秒 | 免费额度（夜间免费） | 未提供 | 未提供 |
 
+DeepSeek 更新的任务截图还显示：261 tok/s、缓存命中率 99.7%、43.1M tok（近似值）。速率与缓存命中率按界面原值记录；精确 Tokens、费用与 API 请求数继续采用账单。
+
 ## 口径与局限
 
 - 三次测试使用同一条提示词，由用户确认。

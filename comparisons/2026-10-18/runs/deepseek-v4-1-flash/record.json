@@ -27,5 +27,13 @@
     "deepseek-usage.png"
   ],
   "artifactSha256": "07c562e697cf312e94f69b3425f4e26682a439a9ec472756d9eb2aaa96e9cfb0",
-  "artifactBytes": 114689
+  "artifactBytes": 114689,
+  "interfaceStats": {
+    "tokensLabel": "43.1M tok",
+    "tokensPerSecond": 261,
+    "cacheHitRatePercent": 99.7,
+    "rounds": 1,
+    "steps": 160,
+    "source": "用户更新的 DeepSeek Harness 任务截图底栏。速率和缓存命中率均按界面显示记录，未提供计算方式；43.1M tok 为近似显示。1 轮、160 步是界面过程计数，与账单的 161 次 API 请求分别记录。"
+  }
 }

@@ -41,6 +41,12 @@ $csvRows = foreach ($record in $runRecords) {
     tokens = $record.tokens; api_requests = $record.requests
     cost_basis = $(if ($record.costBasis) { $record.costBasis } elseif ($null -eq $record.costCny) { 'not_provided' } else { 'user_bill' })
     cost_label = $(if ($record.costLabel) { $record.costLabel } elseif ($null -eq $record.costCny) { '未提供' } else { '账单支出' })
+    interface_tokens_label = $record.interfaceStats.tokensLabel
+    interface_tokens_per_second = $record.interfaceStats.tokensPerSecond
+    cache_hit_rate_percent = $record.interfaceStats.cacheHitRatePercent
+    interface_rounds = $record.interfaceStats.rounds
+    interface_steps = $record.interfaceStats.steps
+    interface_stats_source = $record.interfaceStats.source
     usage_source = $record.usageSource
   }
 }
